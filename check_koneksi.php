@@ -120,24 +120,20 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
     $ping_code = curl_getinfo($ch_p, CURLINFO_HTTP_CODE);
     curl_close($ch_p);
 
-    if ($ping_code === 200 || $ping_code === 201) {
-        $test_upload_status = 'SUCCESS';
-        $test_upload_msg = 'Izin upload berfungsi dengan baik.';
+    if ($http_code_b === 200) {
+        $bucket_info = json_decode($response_b, true);
+        $diagnostics['storage']['status'] = 'CONNECTED';
+        $diagnostics['storage']['message'] = "Supabase Storage API aktif (HTTP 200).";
         $diagnostics['storage']['bucket_found'] = true;
-        // Hapus file test
-        $ch_d = curl_init();
-        curl_setopt($ch_d, CURLOPT_URL, $ping_url);
-        curl_setopt($ch_d, CURLOPT_CUSTOMREQUEST, "DELETE");
-        curl_setopt($ch_d, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_d, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer {$supabase_key}",
-            "apikey: {$supabase_key}"
-        ]);
-        curl_exec($ch_d);
-        curl_close($ch_d);
+        $diagnostics['storage']['bucket_public'] = !empty($bucket_info['public']);
+    } elseif ($test_upload_status === 'SUCCESS') {
+        $diagnostics['storage']['status'] = 'CONNECTED';
+        $diagnostics['storage']['message'] = "Supabase Storage API aktif dan izin upload berhasil.";
+        $diagnostics['storage']['bucket_found'] = true;
+        $diagnostics['storage']['bucket_public'] = true;
     } else {
-        $test_upload_status = 'FAILED';
-        $test_upload_msg = "HTTP {$ping_code}: " . ($ping_res ?: 'Tidak dapat upload ke bucket.');
+        $diagnostics['storage']['status'] = 'FAILED';
+        $diagnostics['storage']['message'] = "Supabase Storage API respon HTTP {$http_code_b}: " . ($response_b ?: 'Gagal memeriksa bucket');
     }
     
     $diagnostics['storage']['test_upload'] = [
@@ -248,7 +244,7 @@ if ($wants_json) {
             </div>
             
             <p class="mb-3 <?php echo $diagnostics['storage']['status'] === 'CONNECTED' ? 'text-success' : 'text-danger'; ?>">
-                <strong>Status Pesan:</strong> <?php echo htmlspecialchars($diagnostics['storage']['message']); ?>
+                <strong>Status Pesan:</strong> <?php echo htmlspecialchars((string)($diagnostics['storage']['message'] ?? '')); ?>
             </p>
 
             <?php if ($diagnostics['storage']['status'] === 'CONNECTED'): ?>
