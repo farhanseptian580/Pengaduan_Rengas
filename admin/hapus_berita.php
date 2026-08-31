@@ -4,31 +4,33 @@ include '../koneksi.php';
 session_start();
 
 // Cek session admin
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: ../login.php");
     exit();
 }
 
 // Cek ID parameter
-if (isset($_GET['id'])) {
+if (isset($_GET['id']) && $pdo) {
     $id = $_GET['id'];
     
-    // Ambil info foto terlebih dahulu untuk dihapus dari folder uploads
-    $query_select = "SELECT foto FROM berita WHERE id_berita = '$id'";
-    $result_select = mysqli_query($conn, $query_select);
-    
-    if (mysqli_num_rows($result_select) > 0) {
-        $data = mysqli_fetch_assoc($result_select);
-        $foto = $data['foto'];
+    try {
+        // Ambil info foto terlebih dahulu
+        $stmt = $pdo->prepare("SELECT foto FROM berita WHERE id_berita = :id LIMIT 1");
+        $stmt->execute([':id' => $id]);
+        $data = $stmt->fetch();
         
-        // Hapus file gambar jika ada
-        if (file_exists('../uploads/' . $foto)) {
-            unlink('../uploads/' . $foto);
+        if ($data) {
+            $foto = $data['foto'];
+            
+            // Hapus file gambar dari Supabase Storage / lokal
+            delete_from_supabase($foto, 'pengaduan');
+            
+            // Hapus record dari database
+            $delete_stmt = $pdo->prepare("DELETE FROM berita WHERE id_berita = :id");
+            $delete_stmt->execute([':id' => $id]);
         }
-        
-        // Hapus record dari database
-        $query_delete = "DELETE FROM berita WHERE id_berita = '$id'";
-        mysqli_query($conn, $query_delete);
+    } catch (PDOException $e) {
+        error_log("Error deleting berita: " . $e->getMessage());
     }
 }
 

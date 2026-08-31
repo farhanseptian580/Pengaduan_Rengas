@@ -11,31 +11,66 @@ function generateKodeLaporan() {
 
 // Proses submit form
 if (isset($_POST['submit'])) {
-    $kode_laporan = generateKodeLaporan();
-    $nama = mysqli_real_escape_string($conn, $_POST['nama']);
-    $no_hp = mysqli_real_escape_string($conn, $_POST['no_hp']);
-    $judul_laporan = mysqli_real_escape_string($conn, $_POST['judul_laporan']);
-    $deskripsi = mysqli_real_escape_string($conn, $_POST['deskripsi']);
-    $lokasi = mysqli_real_escape_string($conn, $_POST['lokasi']);
-    $latitude = mysqli_real_escape_string($conn, $_POST['latitude']);
-    $longitude = mysqli_real_escape_string($conn, $_POST['longitude']);
-    
-    // Upload foto
-    $foto = $_FILES['foto']['name'];
-    $tmp_foto = $_FILES['foto']['tmp_name'];
-    $foto_path = 'uploads/' . $foto;
-    
-    move_uploaded_file($tmp_foto, $foto_path);
-    
-    // Insert data ke database
-    $query = "INSERT INTO pengaduan (kode_laporan, nama, no_hp, judul_laporan, deskripsi, lokasi, latitude, longitude, foto, status) 
-              VALUES ('$kode_laporan', '$nama', '$no_hp', '$judul_laporan', '$deskripsi', '$lokasi', '$latitude', '$longitude', '$foto', 'Menunggu')";
-    
-    if (mysqli_query($conn, $query)) {
-        $success = true;
-        $kode_laporan_result = $kode_laporan;
+    if (!$pdo) {
+        $error = "Gagal terhubung ke database. Pastikan konfigurasi Supabase sudah benar di file .env atau Vercel Settings.";
     } else {
-        $error = "Gagal mengirim pengaduan: " . mysqli_error($conn);
+        $kode_laporan = generateKodeLaporan();
+        $nama = trim($_POST['nama'] ?? '');
+        $no_hp = trim($_POST['no_hp'] ?? '');
+        $judul_laporan = trim($_POST['judul_laporan'] ?? '');
+        $deskripsi = trim($_POST['deskripsi'] ?? '');
+        $lokasi = trim($_POST['lokasi'] ?? '');
+        $latitude = trim($_POST['latitude'] ?? '');
+        $longitude = trim($_POST['longitude'] ?? '');
+        
+        // Upload foto bukti ke Supabase Storage
+        $foto_db = '';
+        if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+            $tmp_foto = $_FILES['foto']['tmp_name'];
+            $file_ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+            $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            
+            if (in_array($file_ext, $allowed_ext)) {
+                $foto_db = 'pengaduan_' . time() . '_' . uniqid() . '.' . $file_ext;
+                $mime_type = mime_content_type($tmp_foto) ?: 'image/jpeg';
+                
+                $uploaded = upload_to_supabase($tmp_foto, $foto_db, $mime_type, 'pengaduan');
+                if (!$uploaded) {
+                    $error = "Gagal mengunggah foto ke Supabase Storage. Pastikan bucket 'pengaduan' sudah dibuat dan public.";
+                }
+            } else {
+                $error = "Format foto tidak didukung. Harap gunakan format JPG, JPEG, PNG, GIF, atau WEBP.";
+            }
+        } else {
+            $error = "Harap lampirkan foto bukti pengaduan.";
+        }
+        
+        // Insert data ke database Supabase
+        if (!isset($error)) {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO pengaduan (kode_laporan, nama, no_hp, judul_laporan, deskripsi, lokasi, latitude, longitude, foto, status) 
+                    VALUES (:kode_laporan, :nama, :no_hp, :judul_laporan, :deskripsi, :lokasi, :latitude, :longitude, :foto, 'Menunggu')
+                ");
+                
+                $stmt->execute([
+                    ':kode_laporan' => $kode_laporan,
+                    ':nama' => $nama,
+                    ':no_hp' => $no_hp,
+                    ':judul_laporan' => $judul_laporan,
+                    ':deskripsi' => $deskripsi,
+                    ':lokasi' => $lokasi,
+                    ':latitude' => $latitude ?: null,
+                    ':longitude' => $longitude ?: null,
+                    ':foto' => $foto_db
+                ]);
+                
+                $success = true;
+                $kode_laporan_result = $kode_laporan;
+            } catch (PDOException $e) {
+                $error = "Gagal menyimpan pengaduan ke database: " . $e->getMessage();
+            }
+        }
     }
 }
 ?>
@@ -116,14 +151,58 @@ if (isset($_POST['submit'])) {
                             <?php if (isset($success)): ?>
                                 <div class="alert alert-success">
                                     <h4><i class="bi bi-check-circle"></i> Pengaduan Berhasil Dikirim!</h4>
-                                    <p>Kode Laporan Anda: <strong><?php echo $kode_laporan_result; ?></strong></p>
+                                    <p>Kode Laporan Anda: <strong><?php echo htmlspecialchars($kode_laporan_result); ?></strong></p>
                                     <p class="mb-0">Simpan kode laporan ini untuk tracking status pengaduan Anda.</p>
                                     <a href="cek_status.php" class="btn btn-success mt-3">Cek Status Sekarang</a>
                                 </div>
                             <?php elseif (isset($error)): ?>
                                 <div class="alert alert-danger">
-                                    <?php echo $error; ?>
+                                    <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
                                 </div>
+                                <form method="POST" enctype="multipart/form-data">
+                                    <div class="mb-3">
+                                        <label for="nama" class="form-label">Nama Lengkap</label>
+                                        <input type="text" class="form-control" id="nama" name="nama" value="<?php echo htmlspecialchars($_POST['nama'] ?? ''); ?>" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="no_hp" class="form-label">Nomor HP</label>
+                                        <input type="text" class="form-control" id="no_hp" name="no_hp" value="<?php echo htmlspecialchars($_POST['no_hp'] ?? ''); ?>" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="judul_laporan" class="form-label">Judul Laporan</label>
+                                        <input type="text" class="form-control" id="judul_laporan" name="judul_laporan" value="<?php echo htmlspecialchars($_POST['judul_laporan'] ?? ''); ?>" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="deskripsi" class="form-label">Deskripsi Laporan</label>
+                                        <textarea class="form-control" id="deskripsi" name="deskripsi" rows="5" required><?php echo htmlspecialchars($_POST['deskripsi'] ?? ''); ?></textarea>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="lokasi" class="form-label">Lokasi Kejadian</label>
+                                        <input type="text" class="form-control" id="lokasi" name="lokasi" value="<?php echo htmlspecialchars($_POST['lokasi'] ?? ''); ?>" placeholder="Ketik alamat lengkap" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Pilih Lokasi di Peta</label>
+                                        <div id="map"></div>
+                                        <div class="form-text">Klik pada peta untuk menentukan lokasi kejadian</div>
+                                        <input type="hidden" id="latitude" name="latitude" value="<?php echo htmlspecialchars($_POST['latitude'] ?? ''); ?>">
+                                        <input type="hidden" id="longitude" name="longitude" value="<?php echo htmlspecialchars($_POST['longitude'] ?? ''); ?>">
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="foto" class="form-label">Foto Bukti</label>
+                                        <input type="file" class="form-control" id="foto" name="foto" accept="image/*" required>
+                                        <div class="form-text">Upload foto sebagai bukti pengaduan (JPG, PNG, JPEG, WEBP)</div>
+                                    </div>
+                                    
+                                    <button type="submit" name="submit" class="btn btn-primary w-100 btn-lg">
+                                        <i class="bi bi-send"></i> Kirim Pengaduan
+                                    </button>
+                                </form>
                             <?php else: ?>
                                 <form method="POST" enctype="multipart/form-data">
                                     <div class="mb-3">
@@ -162,7 +241,7 @@ if (isset($_POST['submit'])) {
                                     <div class="mb-3">
                                         <label for="foto" class="form-label">Foto Bukti</label>
                                         <input type="file" class="form-control" id="foto" name="foto" accept="image/*" required>
-                                        <div class="form-text">Upload foto sebagai bukti pengaduan (JPG, PNG, JPEG)</div>
+                                        <div class="form-text">Upload foto sebagai bukti pengaduan (JPG, PNG, JPEG, WEBP)</div>
                                     </div>
                                     
                                     <button type="submit" name="submit" class="btn btn-primary w-100 btn-lg">
@@ -188,7 +267,7 @@ if (isset($_POST['submit'])) {
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // Inisialisasi peta (pusat ke Indonesia)
-        var map = L.map('map').setView([-2.5489, 118.0149], 5);
+        var map = L.map('map').setView([-6.2831, 106.7501], 13);
         
         // Tambahkan tile layer (OpenStreetMap)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -210,9 +289,6 @@ if (isset($_POST['submit'])) {
             // Simpan koordinat ke input hidden
             document.getElementById('latitude').value = e.latlng.lat;
             document.getElementById('longitude').value = e.latlng.lng;
-            
-            // Tampilkan koordinat
-            alert('Lokasi dipilih!\nLatitude: ' + e.latlng.lat + '\nLongitude: ' + e.latlng.lng);
         });
     </script>
 </body>

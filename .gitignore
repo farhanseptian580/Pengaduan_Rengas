@@ -1,0 +1,15 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Local uploads and archives
+bulan_website.zip
+*.zip
+*.log
+
+# OS / Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

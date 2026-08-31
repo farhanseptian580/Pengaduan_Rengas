@@ -4,58 +4,89 @@ include '../koneksi.php';
 session_start();
 
 // Cek session admin
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: ../login.php");
     exit();
 }
 
+$id_pengaduan = $_GET['id'] ?? ($_POST['id_pengaduan'] ?? null);
+if (!$id_pengaduan) {
+    header("Location: data_pengaduan.php");
+    exit();
+}
+
+$success = null;
+$error = null;
+
 // Proses update status dan tanggapan
 if (isset($_POST['update'])) {
-    $id_pengaduan = $_POST['id_pengaduan'];
-    $status = mysqli_real_escape_string($conn, $_POST['status']);
-    $tanggapan = mysqli_real_escape_string($conn, $_POST['tanggapan']);
+    $status = trim($_POST['status'] ?? 'Menunggu');
+    $tanggapan = trim($_POST['tanggapan'] ?? '');
     
     // Proses upload foto bukti selesai
-    $foto_selesai_query = "";
-    if (isset($_FILES['foto_selesai']) && $_FILES['foto_selesai']['error'] == 0) {
-        $target_dir = "../uploads/";
-        if (!file_exists($target_dir)) {
-            mkdir($target_dir, 0777, true);
-        }
-        $file_extension = pathinfo($_FILES["foto_selesai"]["name"], PATHINFO_EXTENSION);
-        $file_name = "selesai_" . time() . "_" . uniqid() . "." . $file_extension;
-        $target_file = $target_dir . $file_name;
+    $foto_selesai_db = null;
+    $has_new_foto_selesai = false;
+    
+    if (isset($_FILES['foto_selesai']) && $_FILES['foto_selesai']['error'] === UPLOAD_ERR_OK) {
+        $file_extension = strtolower(pathinfo($_FILES["foto_selesai"]["name"], PATHINFO_EXTENSION));
+        $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
         
-        $allowed_types = array('jpg', 'jpeg', 'png', 'gif');
-        if (in_array(strtolower($file_extension), $allowed_types)) {
-            if (move_uploaded_file($_FILES["foto_selesai"]["tmp_name"], $target_file)) {
-                $foto_selesai_query = ", foto_selesai = '$file_name'";
+        if (in_array($file_extension, $allowed_types)) {
+            $tmp_name = $_FILES["foto_selesai"]["tmp_name"];
+            $foto_selesai_db = "selesai_" . time() . "_" . uniqid() . "." . $file_extension;
+            $mime_type = mime_content_type($tmp_name) ?: 'image/jpeg';
+            
+            $uploaded = upload_to_supabase($tmp_name, $foto_selesai_db, $mime_type, 'pengaduan');
+            if ($uploaded) {
+                $has_new_foto_selesai = true;
             } else {
-                $error = "Gagal mengupload foto bukti selesai.";
+                $error = "Gagal mengunggah foto bukti selesai ke Supabase Storage.";
             }
         } else {
-            $error = "Format file tidak didukung. Hanya JPG, JPEG, PNG, dan GIF.";
+            $error = "Format file tidak didukung. Hanya JPG, JPEG, PNG, GIF, dan WEBP.";
         }
     }
     
-    if (!isset($error)) {
-        $query = "UPDATE pengaduan SET status = '$status', tanggapan = '$tanggapan' $foto_selesai_query WHERE id_pengaduan = '$id_pengaduan'";
-        
-        if (mysqli_query($conn, $query)) {
-            $success = "Status dan tanggapan berhasil diperbarui!";
-        } else {
-            $error = "Gagal memperbarui: " . mysqli_error($conn);
+    if (!isset($error) && $pdo) {
+        try {
+            if ($has_new_foto_selesai) {
+                $sql = "UPDATE pengaduan SET status = :status, tanggapan = :tanggapan, foto_selesai = :foto_selesai, tanggal_selesai = CASE WHEN :status = 'Selesai' THEN CURRENT_TIMESTAMP ELSE tanggal_selesai END WHERE id_pengaduan = :id";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    ':status' => $status,
+                    ':tanggapan' => $tanggapan,
+                    ':foto_selesai' => $foto_selesai_db,
+                    ':id' => $id_pengaduan
+                ]);
+            } else {
+                $sql = "UPDATE pengaduan SET status = :status, tanggapan = :tanggapan, tanggal_selesai = CASE WHEN :status = 'Selesai' THEN CURRENT_TIMESTAMP ELSE tanggal_selesai END WHERE id_pengaduan = :id";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    ':status' => $status,
+                    ':tanggapan' => $tanggapan,
+                    ':id' => $id_pengaduan
+                ]);
+            }
+            $success = "Status dan tanggapan pengaduan berhasil diperbarui!";
+        } catch (PDOException $e) {
+            $error = "Gagal memperbarui data: " . $e->getMessage();
         }
     }
 }
 
 // Ambil data pengaduan berdasarkan ID
-if (isset($_GET['id'])) {
-    $id = $_GET['id'];
-    $query = "SELECT * FROM pengaduan WHERE id_pengaduan = '$id'";
-    $result = mysqli_query($conn, $query);
-    $data = mysqli_fetch_assoc($result);
-} else {
+$data = null;
+if ($pdo) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM pengaduan WHERE id_pengaduan = :id LIMIT 1");
+        $stmt->execute([':id' => $id_pengaduan]);
+        $data = $stmt->fetch();
+    } catch (PDOException $e) {
+        $error = "Error mengambil data: " . $e->getMessage();
+    }
+}
+
+if (!$data) {
     header("Location: data_pengaduan.php");
     exit();
 }
@@ -114,7 +145,7 @@ if (isset($_GET['id'])) {
                 <div class="p-4">
                     <h4><i class="bi bi-megaphone-fill"></i> Admin Panel</h4>
                     <hr>
-                    <p class="mb-0">Selamat datang, <?php echo $_SESSION['nama_admin']; ?></p>
+                    <p class="mb-0">Selamat datang, <?php echo htmlspecialchars($_SESSION['nama_admin'] ?? 'Admin'); ?></p>
                 </div>
                 <nav class="nav flex-column">
                     <a class="nav-link" href="dashboard.php">
@@ -138,13 +169,13 @@ if (isset($_GET['id'])) {
                 
                 <?php if (isset($success)): ?>
                     <div class="alert alert-success">
-                        <i class="bi bi-check-circle"></i> <?php echo $success; ?>
+                        <i class="bi bi-check-circle"></i> <?php echo htmlspecialchars($success); ?>
                     </div>
                 <?php endif; ?>
                 
                 <?php if (isset($error)): ?>
                     <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+                        <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
                     </div>
                 <?php endif; ?>
                 
@@ -154,7 +185,7 @@ if (isset($_GET['id'])) {
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <strong>Kode Laporan:</strong><br>
-                            <?php echo $data['kode_laporan']; ?>
+                            <span class="badge bg-dark fs-6"><?php echo htmlspecialchars($data['kode_laporan']); ?></span>
                         </div>
                         <div class="col-md-6 mb-3">
                             <strong>Tanggal Lapor:</strong><br>
@@ -162,32 +193,32 @@ if (isset($_GET['id'])) {
                         </div>
                         <div class="col-md-6 mb-3">
                             <strong>Nama Pelapor:</strong><br>
-                            <?php echo $data['nama']; ?>
+                            <?php echo htmlspecialchars($data['nama']); ?>
                         </div>
                         <div class="col-md-6 mb-3">
                             <strong>No HP:</strong><br>
-                            <?php echo $data['no_hp']; ?>
+                            <?php echo htmlspecialchars($data['no_hp']); ?>
                         </div>
                         <div class="col-md-12 mb-3">
                             <strong>Judul Laporan:</strong><br>
-                            <?php echo $data['judul_laporan']; ?>
+                            <?php echo htmlspecialchars($data['judul_laporan']); ?>
                         </div>
                         <div class="col-md-12 mb-3">
                             <strong>Deskripsi:</strong><br>
-                            <?php echo $data['deskripsi']; ?>
+                            <div style="white-space: pre-line;"><?php echo htmlspecialchars($data['deskripsi']); ?></div>
                         </div>
                         <div class="col-md-12 mb-3">
                             <strong>Lokasi:</strong><br>
-                            <?php echo $data['lokasi']; ?>
-                            <?php if ($data['latitude'] && $data['longitude']): ?>
+                            <?php echo htmlspecialchars($data['lokasi']); ?>
+                            <?php if (!empty($data['latitude']) && !empty($data['longitude'])): ?>
                                 <div id="map"></div>
-                                <input type="hidden" id="latitude" value="<?php echo $data['latitude']; ?>">
-                                <input type="hidden" id="longitude" value="<?php echo $data['longitude']; ?>">
+                                <input type="hidden" id="latitude" value="<?php echo htmlspecialchars($data['latitude']); ?>">
+                                <input type="hidden" id="longitude" value="<?php echo htmlspecialchars($data['longitude']); ?>">
                             <?php endif; ?>
                         </div>
                         <div class="col-md-12 mb-3">
-                            <strong>Foto Bukti:</strong><br>
-                            <img src="../uploads/<?php echo $data['foto']; ?>" class="img-fluid rounded" alt="Foto Bukti" style="max-height: 300px;">
+                            <strong>Foto Bukti Pengaduan:</strong><br>
+                            <img src="<?php echo htmlspecialchars(get_file_url($data['foto'])); ?>" class="img-fluid rounded border mt-2" alt="Foto Bukti" style="max-height: 300px;">
                         </div>
                         <div class="col-md-12 mb-3">
                             <strong>Status Saat Ini:</strong><br>
@@ -201,7 +232,7 @@ if (isset($_GET['id'])) {
                                 $status_badge = 'bg-success text-white';
                             }
                             ?>
-                            <span class="badge <?php echo $status_badge; ?> fs-6"><?php echo $data['status']; ?></span>
+                            <span class="badge <?php echo $status_badge; ?> fs-6 mt-1"><?php echo htmlspecialchars($data['status']); ?></span>
                         </div>
                     </div>
                 </div>
@@ -210,10 +241,10 @@ if (isset($_GET['id'])) {
                 <div class="card card-custom p-4">
                     <h4 class="mb-4"><i class="bi bi-pencil-square"></i> Update Status & Tanggapan</h4>
                     <form method="POST" enctype="multipart/form-data">
-                        <input type="hidden" name="id_pengaduan" value="<?php echo $data['id_pengaduan']; ?>">
+                        <input type="hidden" name="id_pengaduan" value="<?php echo htmlspecialchars($data['id_pengaduan']); ?>">
                         
                         <div class="mb-3">
-                            <label for="status" class="form-label">Status</label>
+                            <label for="status" class="form-label">Status Pengaduan</label>
                             <select class="form-select" id="status" name="status" required>
                                 <option value="Menunggu" <?php echo $data['status'] == 'Menunggu' ? 'selected' : ''; ?>>Menunggu</option>
                                 <option value="Diproses" <?php echo $data['status'] == 'Diproses' ? 'selected' : ''; ?>>Diproses</option>
@@ -223,20 +254,20 @@ if (isset($_GET['id'])) {
                         
                         <div class="mb-3">
                             <label for="tanggapan" class="form-label">Tanggapan Admin</label>
-                            <textarea class="form-control" id="tanggapan" name="tanggapan" rows="5"><?php echo $data['tanggapan']; ?></textarea>
-                            <div class="form-text">Berikan tanggapan atau penjelasan mengenai status pengaduan ini.</div>
+                            <textarea class="form-control" id="tanggapan" name="tanggapan" rows="5"><?php echo htmlspecialchars($data['tanggapan'] ?? ''); ?></textarea>
+                            <div class="form-text">Berikan tanggapan atau penjelasan mengenai status tindak lanjut pengaduan ini.</div>
                         </div>
                         
                         <div class="mb-3" id="foto-selesai-container" style="<?php echo $data['status'] == 'Selesai' ? 'display: block;' : 'display: none;'; ?>">
-                            <label for="foto_selesai" class="form-label">Foto Bukti Selesai</label>
+                            <label for="foto_selesai" class="form-label">Foto Bukti Selesai (Opsional jika laporan telah beres)</label>
                             <input class="form-control" type="file" id="foto_selesai" name="foto_selesai" accept="image/*">
                             <?php if (!empty($data['foto_selesai'])): ?>
                                 <div class="mt-2">
-                                    <p class="mb-1">Foto saat ini:</p>
-                                    <img src="../uploads/<?php echo $data['foto_selesai']; ?>" class="img-thumbnail" style="max-height: 150px;">
+                                    <p class="mb-1">Foto bukti selesai saat ini:</p>
+                                    <img src="<?php echo htmlspecialchars(get_file_url($data['foto_selesai'])); ?>" class="img-thumbnail" style="max-height: 150px;">
                                 </div>
                             <?php endif; ?>
-                            <div class="form-text">Unggah foto sebagai bukti jika laporan telah selesai.</div>
+                            <div class="form-text">Unggah foto sebagai bukti penanganan jika status adalah Selesai.</div>
                         </div>
                         
                         <div class="d-flex gap-2">
@@ -256,18 +287,15 @@ if (isset($_GET['id'])) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        <?php if ($data['latitude'] && $data['longitude']): ?>
-            // Inisialisasi peta dengan koordinat dari database
-            var lat = <?php echo $data['latitude']; ?>;
-            var lng = <?php echo $data['longitude']; ?>;
+        <?php if (!empty($data['latitude']) && !empty($data['longitude'])): ?>
+            var lat = <?php echo floatval($data['latitude']); ?>;
+            var lng = <?php echo floatval($data['longitude']); ?>;
             var map = L.map('map').setView([lat, lng], 15);
             
-            // Tambahkan tile layer
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
             
-            // Tambahkan marker di lokasi
             L.marker([lat, lng]).addTo(map)
                 .bindPopup('Lokasi Kejadian')
                 .openPopup();

@@ -4,63 +4,83 @@ include '../koneksi.php';
 session_start();
 
 // Cek session admin
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: ../login.php");
     exit();
 }
 
-// Cek ID parameter
-if (!isset($_GET['id'])) {
+$id = $_GET['id'] ?? null;
+if (!$id) {
     header("Location: data_berita.php");
     exit();
 }
 
-$id = $_GET['id'];
-$query = "SELECT * FROM berita WHERE id_berita = '$id'";
-$result = mysqli_query($conn, $query);
+$error = null;
 
-if (mysqli_num_rows($result) == 0) {
-    header("Location: data_berita.php");
-    exit();
-}
-
-$data = mysqli_fetch_assoc($result);
-
-// Proses submit form
-if (isset($_POST['submit'])) {
-    $judul = mysqli_real_escape_string($conn, $_POST['judul']);
-    $isi = mysqli_real_escape_string($conn, $_POST['isi']);
-    $foto_db = $data['foto']; // Default foto lama
-    
-    // Cek jika ada unggah foto baru
-    if ($_FILES['foto']['name'] != '') {
-        $foto_name = $_FILES['foto']['name'];
-        $tmp_foto = $_FILES['foto']['tmp_name'];
-        
-        $new_foto_db = time() . '_' . $foto_name;
-        $foto_path = '../uploads/' . $new_foto_db;
-        
-        if (move_uploaded_file($tmp_foto, $foto_path)) {
-            // Hapus foto lama jika ada
-            if (file_exists('../uploads/' . $data['foto'])) {
-                unlink('../uploads/' . $data['foto']);
-            }
-            $foto_db = $new_foto_db;
-        } else {
-            $error = "Gagal mengunggah foto baru.";
-        }
+// Ambil data berita
+$data = null;
+if ($pdo) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM berita WHERE id_berita = :id LIMIT 1");
+        $stmt->execute([':id' => $id]);
+        $data = $stmt->fetch();
+    } catch (PDOException $e) {
+        $error = "Error mengambil data: " . $e->getMessage();
     }
+}
+
+if (!$data) {
+    header("Location: data_berita.php");
+    exit();
+}
+
+// Proses submit form edit
+if (isset($_POST['submit'])) {
+    $judul = trim($_POST['judul'] ?? '');
+    $isi = trim($_POST['isi'] ?? '');
+    $tanggal_berita = trim($_POST['tanggal_berita'] ?? '');
+    $foto_db = $data['foto']; // Default pakai foto lama
     
-    if (!isset($error)) {
-        $tanggal_berita = mysqli_real_escape_string($conn, $_POST['tanggal_berita']);
-        // Update data ke database
-        $update_query = "UPDATE berita SET judul = '$judul', isi = '$isi', foto = '$foto_db', tanggal_berita = '$tanggal_berita' WHERE id_berita = '$id'";
+    if (empty($judul) || empty($isi) || empty($tanggal_berita)) {
+        $error = "Semua field wajib diisi!";
+    } else {
+        // Cek jika ada unggahan foto baru
+        if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+            $file_ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+            $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            
+            if (in_array($file_ext, $allowed_ext)) {
+                $tmp_foto = $_FILES['foto']['tmp_name'];
+                $new_foto_db = 'berita_' . time() . '_' . uniqid() . '.' . $file_ext;
+                $mime_type = mime_content_type($tmp_foto) ?: 'image/jpeg';
+                
+                $uploaded = upload_to_supabase($tmp_foto, $new_foto_db, $mime_type, 'pengaduan');
+                if ($uploaded) {
+                    $foto_db = $new_foto_db;
+                } else {
+                    $error = "Gagal mengunggah foto baru ke Supabase Storage.";
+                }
+            } else {
+                $error = "Format file tidak didukung. Harap gunakan JPG, JPEG, PNG, GIF, atau WEBP.";
+            }
+        }
         
-        if (mysqli_query($conn, $update_query)) {
-            header("Location: data_berita.php");
-            exit();
-        } else {
-            $error = "Gagal memperbarui berita: " . mysqli_error($conn);
+        if (!isset($error) && $pdo) {
+            try {
+                $stmt = $pdo->prepare("UPDATE berita SET judul = :judul, isi = :isi, foto = :foto, tanggal_berita = :tanggal_berita WHERE id_berita = :id");
+                $stmt->execute([
+                    ':judul' => $judul,
+                    ':isi' => $isi,
+                    ':foto' => $foto_db,
+                    ':tanggal_berita' => $tanggal_berita,
+                    ':id' => $id
+                ]);
+                
+                header("Location: data_berita.php");
+                exit();
+            } catch (PDOException $e) {
+                $error = "Gagal memperbarui berita: " . $e->getMessage();
+            }
         }
     }
 }
@@ -118,7 +138,7 @@ if (isset($_POST['submit'])) {
                 <div class="p-4">
                     <h4><i class="bi bi-megaphone-fill"></i> Admin Panel</h4>
                     <hr>
-                    <p class="mb-0">Selamat datang, <?php echo $_SESSION['nama_admin']; ?></p>
+                    <p class="mb-0">Selamat datang, <?php echo htmlspecialchars($_SESSION['nama_admin'] ?? 'Admin'); ?></p>
                 </div>
                 <nav class="nav flex-column">
                     <a class="nav-link" href="dashboard.php">
@@ -142,7 +162,7 @@ if (isset($_POST['submit'])) {
 
                 <?php if (isset($error)): ?>
                     <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <i class="bi bi-exclamation-triangle-fill"></i> <?php echo $error; ?>
+                        <i class="bi bi-exclamation-triangle-fill"></i> <?php echo htmlspecialchars($error); ?>
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 <?php endif; ?>
@@ -170,7 +190,7 @@ if (isset($_POST['submit'])) {
                             <div class="form-text">Biarkan kosong jika tidak ingin mengubah foto.</div>
                             <div class="mt-2">
                                 <label class="form-label d-block">Foto Saat Ini:</label>
-                                <img src="../uploads/<?php echo htmlspecialchars($data['foto']); ?>" class="current-img" alt="Foto Saat Ini">
+                                <img src="<?php echo htmlspecialchars(get_file_url($data['foto'])); ?>" class="current-img border" alt="Foto Saat Ini">
                             </div>
                         </div>
 

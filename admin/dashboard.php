@@ -1,19 +1,41 @@
-  <?php
+<?php
 include '../koneksi.php';
 
 session_start();
 
 // Cek session admin
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: ../login.php");
     exit();
 }
 
-// Query untuk mendapatkan statistik
-$total_pengaduan = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan"));
-$menunggu = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan WHERE status = 'Menunggu'"));
-$diproses = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan WHERE status = 'Diproses'"));
-$selesai = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan WHERE status = 'Selesai'"));
+$total_pengaduan = 0;
+$menunggu = 0;
+$diproses = 0;
+$selesai = 0;
+$recent_pengaduan = [];
+
+if ($pdo) {
+    try {
+        $total_pengaduan = (int)$pdo->query("SELECT COUNT(*) FROM pengaduan")->fetchColumn();
+        
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM pengaduan WHERE status = :status");
+        
+        $stmt->execute([':status' => 'Menunggu']);
+        $menunggu = (int)$stmt->fetchColumn();
+        
+        $stmt->execute([':status' => 'Diproses']);
+        $diproses = (int)$stmt->fetchColumn();
+        
+        $stmt->execute([':status' => 'Selesai']);
+        $selesai = (int)$stmt->fetchColumn();
+        
+        $recent_stmt = $pdo->query("SELECT * FROM pengaduan ORDER BY tanggal_lapor DESC LIMIT 5");
+        $recent_pengaduan = $recent_stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Dashboard query error: " . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -72,7 +94,7 @@ $selesai = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan WHERE st
                 <div class="p-4">
                     <h4><i class="bi bi-megaphone-fill"></i> Admin</h4>
                     <hr>
-                    <p class="mb-0">Selamat datang, <?php echo $_SESSION['nama_admin']; ?></p>
+                    <p class="mb-0">Selamat datang, <?php echo htmlspecialchars($_SESSION['nama_admin'] ?? 'Admin'); ?></p>
                 </div>
                 <nav class="nav flex-column">
                     <a class="nav-link active" href="dashboard.php">
@@ -158,12 +180,9 @@ $selesai = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan WHERE st
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php
-                                $query = "SELECT * FROM pengaduan ORDER BY tanggal_lapor DESC LIMIT 5";
-                                $result = mysqli_query($conn, $query);
-                                
-                                if (mysqli_num_rows($result) > 0) {
-                                    while ($row = mysqli_fetch_assoc($result)) {
+                                <?php if (!empty($recent_pengaduan)): ?>
+                                    <?php foreach ($recent_pengaduan as $row): ?>
+                                        <?php
                                         $status_badge = '';
                                         if ($row['status'] == 'Menunggu') {
                                             $status_badge = 'bg-warning text-dark';
@@ -174,23 +193,23 @@ $selesai = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM pengaduan WHERE st
                                         }
                                         ?>
                                         <tr>
-                                            <td><?php echo $row['kode_laporan']; ?></td>
-                                            <td><?php echo $row['nama']; ?></td>
-                                            <td><?php echo $row['judul_laporan']; ?></td>
-                                            <td><span class="badge <?php echo $status_badge; ?>"><?php echo $row['status']; ?></span></td>
+                                            <td><strong><?php echo htmlspecialchars($row['kode_laporan']); ?></strong></td>
+                                            <td><?php echo htmlspecialchars($row['nama']); ?></td>
+                                            <td><?php echo htmlspecialchars($row['judul_laporan']); ?></td>
+                                            <td><span class="badge <?php echo $status_badge; ?>"><?php echo htmlspecialchars($row['status']); ?></span></td>
                                             <td><?php echo date('d/m/Y', strtotime($row['tanggal_lapor'])); ?></td>
                                             <td>
                                                 <a href="update_status.php?id=<?php echo $row['id_pengaduan']; ?>" class="btn btn-sm btn-primary">
-                                                    <i class="bi bi-pencil"></i> Update
+                                                    <i class="bi bi-pencil"></i> Detail / Update
                                                 </a>
                                             </td>
                                         </tr>
-                                        <?php
-                                    }
-                                } else {
-                                    echo "<tr><td colspan='6' class='text-center'>Belum ada data pengaduan</td></tr>";
-                                }
-                                ?>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted py-4">Belum ada data pengaduan</td>
+                                    </tr>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>

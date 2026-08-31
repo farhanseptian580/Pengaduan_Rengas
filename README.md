@@ -1,181 +1,104 @@
-# Sistem Pengaduan Masyarakat
+# Sistem Pengaduan Masyarakat (Supabase & Vercel Ready)
 
-Sistem pengaduan masyarakat berbasis PHP native dan MySQL menggunakan XAMPP.
+Sistem Informasi dan Layanan Pengaduan Masyarakat Online berbasis PHP dengan database **Supabase (PostgreSQL)**, penyimpanan media **Supabase Storage**, dan konfigurasi deployment serverless **Vercel** melalui **GitHub**.
 
-## Struktur Folder
+---
+
+## 📁 Struktur Folder
 
 ```
 bulan_website/
-│
-├── index.php                    # Halaman beranda untuk user
-├── koneksi.php                  # Koneksi database
-├── login.php                    # Halaman login admin
-├── dashboard.php                # Dashboard user (opsional)
-├── tambah_pengaduan.php         # Form pengaduan user
-├── cek_status.php               # Cek status laporan user
-├── logout.php                   # Logout admin
-├── database.sql                 # File SQL untuk setup database
-├── README.md                    # Dokumentasi
+├── .env.example             # Template konfigurasi Supabase
+├── .gitignore               # Daftar file yang diabaikan Git
+├── vercel.json              # Konfigurasi runtime PHP untuk Vercel
+├── supabase_schema.sql      # Skrip DDL Database & Storage Supabase
+├── koneksi.php              # Koneksi PDO PostgreSQL & Helper Supabase Storage
+├── index.php                # Halaman Beranda & Berita
+├── tambah_pengaduan.php     # Form Pengaduan + Upload Bukti + Leaflet Map
+├── cek_status.php           # Tracking status pengaduan dengan kode laporan
+├── login.php                # Login Administrator
+├── logout.php               # Logout Administrator
 │
 ├── admin/
-│   ├── dashboard.php            # Dashboard admin
-│   ├── data_pengaduan.php       # Data semua pengaduan
-│   └── update_status.php        # Update status dan tanggapan
+│   ├── dashboard.php        # Ringkasan statistik laporan
+│   ├── data_pengaduan.php   # Tabel data & filter status pengaduan
+│   ├── update_status.php    # Tindak lanjut laporan & upload bukti selesai
+│   ├── data_berita.php      # Manajemen berita kelurahan
+│   ├── tambah_berita.php    # Form tambah berita + upload gambar
+│   ├── edit_berita.php      # Form edit berita
+│   └── hapus_berita.php     # Hapus berita
 │
-├── assets/                      # Folder untuk assets (CSS, JS, gambar)
-└── uploads/                     # Folder untuk upload foto bukti
+└── assets/                  # File statis gambar dan styling
 ```
 
-## Persyaratan
+---
 
-- XAMPP (Apache + MySQL)
-- PHP 7.0 atau lebih tinggi
-- MySQL/MariaDB
-- Browser modern (Chrome, Firefox, Edge, dll)
+## 🚀 Panduan Setup & Hosting
 
-## Cara Instalasi
+### 1. Setup Database di Supabase
+1. Daftar atau login ke [Supabase](https://supabase.com).
+2. Buat project baru.
+3. Buka menu **SQL Editor**, buka file `supabase_schema.sql` pada repository ini, salin seluruh isinya lalu klik **Run**.
+4. Pastikan di menu **Storage** sudah terdapat bucket bernama `pengaduan` dengan status **Public**.
 
-### 1. Setup Database
+---
 
-1. Buka XAMPP Control Panel
-2. Start Apache dan MySQL
-3. Buka phpMyAdmin di browser: http://localhost/phpmyadmin
-4. Buat database baru dengan nama: `pengaduan_masyarakat`
-5. Import file `database.sql` ke database tersebut
+### 2. Jalankan di Komputer Lokal (Development)
+1. Salin `.env.example` menjadi `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+2. Isi nilai kredensial dari dashboard Supabase (**Project Settings** ➔ **Database** dan **API**):
+   ```ini
+   DB_HOST=db.xxxxxxxxxxxxxxxxxxxx.supabase.co
+   DB_PORT=5432
+   DB_NAME=postgres
+   DB_USER=postgres
+   DB_PASS=PasswordDatabaseAnda
 
-Atau jalankan perintah SQL berikut di phpMyAdmin:
+   SUPABASE_URL=https://xxxxxxxxxxxxxxxxxxxx.supabase.co
+   SUPABASE_KEY=anon-key-atau-service-role-key
+   SUPABASE_BUCKET=pengaduan
+   ```
+3. Jalankan built-in web server PHP:
+   ```bash
+   php -S localhost:8000
+   ```
+4. Buka di browser: `http://localhost:8000`.
 
-```sql
-CREATE DATABASE IF NOT EXISTS pengaduan_masyarakat;
-USE pengaduan_masyarakat;
+---
 
-CREATE TABLE IF NOT EXISTS admin (
-    id_admin INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    nama_lengkap VARCHAR(100) NOT NULL
-);
+### 3. Deploy ke Vercel lewat GitHub
 
-INSERT INTO admin (username, password, nama_lengkap) VALUES 
-('admin', 'admin123', 'Administrator');
+1. **Inisialisasi Git & Push ke GitHub**:
+   ```bash
+   git init
+   git add .
+   git commit -m "Migrate to Supabase and Vercel"
+   git remote add origin https://github.com/USERNAME/NAMA_REPO.git
+   git branch -M main
+   git push -u origin main
+   ```
 
-CREATE TABLE IF NOT EXISTS pengaduan (
-    id_pengaduan INT AUTO_INCREMENT PRIMARY KEY,
-    kode_laporan VARCHAR(20) NOT NULL UNIQUE,
-    nama VARCHAR(100) NOT NULL,
-    no_hp VARCHAR(20) NOT NULL,
-    judul_laporan VARCHAR(200) NOT NULL,
-    deskripsi TEXT NOT NULL,
-    lokasi VARCHAR(200) NOT NULL,
-    foto VARCHAR(255) NOT NULL,
-    status ENUM('Menunggu', 'Diproses', 'Selesai') DEFAULT 'Menunggu',
-    tanggapan TEXT,
-    tanggal_lapor DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+2. **Import ke Vercel**:
+   - Buka [vercel.com](https://vercel.com) dan login dengan GitHub.
+   - Klik **"Add New..."** ➔ **"Project"** ➔ Import repository kamu.
 
-### 2. Setup Project
+3. **Atur Environment Variables di Vercel**:
+   Pada menu konfigurasi project Vercel sebelum menekan tombol Deploy, tambahkan variabel berikut di tab **Environment Variables**:
+   - `DB_HOST`: Host PostgreSQL Supabase
+   - `DB_PORT`: `5432`
+   - `DB_NAME`: `postgres`
+   - `DB_USER`: `postgres`
+   - `DB_PASS`: Password database Supabase kamu
+   - `SUPABASE_URL`: URL project Supabase (`https://<project-ref>.supabase.co`)
+   - `SUPABASE_KEY`: Supabase API Key (Anon / Service Role Key)
+   - `SUPABASE_BUCKET`: `pengaduan`
 
-1. Copy folder `bulan_website` ke `C:\xampp\htdocs\`
-2. Pastikan struktur folder sudah benar
-3. Pastikan folder `uploads` memiliki permission write
+4. Klik **Deploy** dan website kamu sudah online!
 
-### 3. Akses Website
+---
 
-- Halaman utama: http://localhost/bulan_website/
-- Login admin: http://localhost/bulan_website/login.php
-
-## Fitur User
-
-### 1. Halaman Beranda
-- Melihat informasi sistem pengaduan
-- Navigasi ke fitur-fitur lain
-
-### 2. Buat Pengaduan
-- Mengisi form pengaduan (nama, no HP, judul, deskripsi, lokasi)
-- Upload foto bukti
-- Mendapatkan kode laporan otomatis
-
-### 3. Cek Status
-- Tracking status laporan menggunakan kode laporan
-- Melihat detail laporan
-- Melihat tanggapan admin
-
-## Fitur Admin
-
-### 1. Login Admin
-- Username: `admin`
-- Password: `admin123`
-
-### 2. Dashboard
-- Melihat statistik pengaduan (total, menunggu, diproses, selesai)
-- Melihat pengaduan terbaru
-
-### 3. Data Pengaduan
-- Melihat semua data pengaduan
-- Filter berdasarkan status
-- Update status dan tanggapan
-
-### 4. Update Status
-- Mengubah status laporan (Menunggu, Diproses, Selesai)
-- Memberikan tanggapan pada laporan
-
-## Database Schema
-
-### Tabel Admin
-- `id_admin` - ID admin (Primary Key, Auto Increment)
-- `username` - Username untuk login
-- `password` - Password untuk login
-- `nama_lengkap` - Nama lengkap admin
-
-### Tabel Pengaduan
-- `id_pengaduan` - ID pengaduan (Primary Key, Auto Increment)
-- `kode_laporan` - Kode unik laporan
-- `nama` - Nama pelapor
-- `no_hp` - Nomor HP pelapor
-- `judul_laporan` - Judul laporan
-- `deskripsi` - Deskripsi lengkap laporan
-- `lokasi` - Lokasi kejadian
-- `foto` - Nama file foto bukti
-- `status` - Status laporan (Menunggu, Diproses, Selesai)
-- `tanggapan` - Tanggapan dari admin
-- `tanggal_lapor` - Tanggal dan waktu lapor
-
-## Teknologi yang Digunakan
-
-- **PHP Native** - Backend tanpa framework
-- **MySQL/MariaDB** - Database
-- **Bootstrap 5** - Framework CSS untuk tampilan modern
-- **Bootstrap Icons** - Icon library
-- **mysqli** - PHP MySQL extension untuk koneksi database
-
-## Catatan Penting
-
-1. Pastikan XAMPP sudah berjalan (Apache dan MySQL)
-2. Pastikan database sudah dibuat dengan nama yang benar
-3. Pastikan folder `uploads` memiliki permission write
-4. Password admin default: `admin123` (sebaiknya diubah untuk produksi)
-5. Sistem menggunakan CDN untuk Bootstrap, jadi membutuhkan koneksi internet
-
-## Troubleshooting
-
-### Error Koneksi Database
-- Pastikan MySQL sudah berjalan di XAMPP
-- Cek konfigurasi di `koneksi.php`
-- Pastikan nama database sudah benar
-
-### Error Upload Foto
-- Pastikan folder `uploads` ada dan memiliki permission write
-- Cek ukuran file foto (maksimal sesuai konfigurasi PHP)
-
-### Tampilan Tidak Berfungsi
-- Pastikan terkoneksi internet (untuk CDN Bootstrap)
-- Cek browser yang digunakan
-
-## Lisensi
-
-Sistem ini dibuat untuk tujuan pembelajaran dan dapat dimodifikasi sesuai kebutuhan.
-
-## Kontak
-
-Untuk pertanyaan atau bantuan, silakan hubungi developer.
+## 🔐 Akun Default Admin
+- **Username**: `admin`
+- **Password**: `admin123`

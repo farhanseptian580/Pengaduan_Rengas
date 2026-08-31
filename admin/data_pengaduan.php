@@ -4,21 +4,28 @@ include '../koneksi.php';
 session_start();
 
 // Cek session admin
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: ../login.php");
     exit();
 }
 
 // Filter berdasarkan status
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
-$where_clause = '';
-if ($status_filter) {
-    $where_clause = "WHERE status = '$status_filter'";
-}
+$status_filter = isset($_GET['status']) ? trim($_GET['status']) : '';
+$data_pengaduan = [];
 
-// Query untuk mendapatkan data pengaduan
-$query = "SELECT * FROM pengaduan $where_clause ORDER BY tanggal_lapor DESC";
-$result = mysqli_query($conn, $query);
+if ($pdo) {
+    try {
+        if (!empty($status_filter)) {
+            $stmt = $pdo->prepare("SELECT * FROM pengaduan WHERE status = :status ORDER BY tanggal_lapor DESC");
+            $stmt->execute([':status' => $status_filter]);
+        } else {
+            $stmt = $pdo->query("SELECT * FROM pengaduan ORDER BY tanggal_lapor DESC");
+        }
+        $data_pengaduan = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Error fetching pengaduan: " . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -71,7 +78,7 @@ $result = mysqli_query($conn, $query);
                 <div class="p-4">
                     <h4><i class="bi bi-megaphone-fill"></i> Admin Panel</h4>
                     <hr>
-                    <p class="mb-0">Selamat datang, <?php echo $_SESSION['nama_admin']; ?></p>
+                    <p class="mb-0">Selamat datang, <?php echo htmlspecialchars($_SESSION['nama_admin'] ?? 'Admin'); ?></p>
                 </div>
                 <nav class="nav flex-column">
                     <a class="nav-link" href="dashboard.php">
@@ -130,8 +137,8 @@ $result = mysqli_query($conn, $query);
                             <tbody>
                                 <?php
                                 $no = 1;
-                                if (mysqli_num_rows($result) > 0) {
-                                    while ($row = mysqli_fetch_assoc($result)) {
+                                if (!empty($data_pengaduan)) {
+                                    foreach ($data_pengaduan as $row) {
                                         $status_badge = '';
                                         if ($row['status'] == 'Menunggu') {
                                             $status_badge = 'bg-warning text-dark';
@@ -143,23 +150,23 @@ $result = mysqli_query($conn, $query);
                                         ?>
                                         <tr>
                                             <td><?php echo $no++; ?></td>
-                                            <td><?php echo $row['kode_laporan']; ?></td>
-                                            <td><?php echo $row['nama']; ?></td>
-                                            <td><?php echo $row['no_hp']; ?></td>
-                                            <td><?php echo $row['judul_laporan']; ?></td>
-                                            <td><?php echo $row['lokasi']; ?></td>
-                                            <td><span class="badge <?php echo $status_badge; ?>"><?php echo $row['status']; ?></span></td>
+                                            <td><strong><?php echo htmlspecialchars($row['kode_laporan']); ?></strong></td>
+                                            <td><?php echo htmlspecialchars($row['nama']); ?></td>
+                                            <td><?php echo htmlspecialchars($row['no_hp']); ?></td>
+                                            <td><?php echo htmlspecialchars($row['judul_laporan']); ?></td>
+                                            <td><?php echo htmlspecialchars($row['lokasi']); ?></td>
+                                            <td><span class="badge <?php echo $status_badge; ?>"><?php echo htmlspecialchars($row['status']); ?></span></td>
                                             <td><?php echo date('d/m/Y H:i', strtotime($row['tanggal_lapor'])); ?></td>
                                             <td>
                                                 <a href="update_status.php?id=<?php echo $row['id_pengaduan']; ?>" class="btn btn-sm btn-primary">
-                                                    <i class="bi bi-pencil"></i> Update
+                                                    <i class="bi bi-pencil"></i> Detail / Update
                                                 </a>
                                             </td>
                                         </tr>
                                         <?php
                                     }
                                 } else {
-                                    echo "<tr><td colspan='9' class='text-center'>Tidak ada data pengaduan</td></tr>";
+                                    echo "<tr><td colspan='9' class='text-center text-muted py-4'>Tidak ada data pengaduan</td></tr>";
                                 }
                                 ?>
                             </tbody>

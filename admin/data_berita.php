@@ -4,14 +4,20 @@ include '../koneksi.php';
 session_start();
 
 // Cek session admin
-if (!isset($_SESSION['admin_logged_in'])) {
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: ../login.php");
     exit();
 }
 
-// Ambil data berita
-$query = "SELECT * FROM berita ORDER BY tanggal_berita DESC";
-$result = mysqli_query($conn, $query);
+$berita_data = [];
+if ($pdo) {
+    try {
+        $stmt = $pdo->query("SELECT * FROM berita ORDER BY tanggal_berita DESC, id_berita DESC");
+        $berita_data = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Error fetching berita: " . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -70,7 +76,7 @@ $result = mysqli_query($conn, $query);
                 <div class="p-4">
                     <h4><i class="bi bi-megaphone-fill"></i> Admin Panel</h4>
                     <hr>
-                    <p class="mb-0">Selamat datang, <?php echo $_SESSION['nama_admin']; ?></p>
+                    <p class="mb-0">Selamat datang, <?php echo htmlspecialchars($_SESSION['nama_admin'] ?? 'Admin'); ?></p>
                 </div>
                 <nav class="nav flex-column">
                     <a class="nav-link" href="dashboard.php">
@@ -113,13 +119,13 @@ $result = mysqli_query($conn, $query);
                             <tbody>
                                 <?php
                                 $no = 1;
-                                if (mysqli_num_rows($result) > 0) {
-                                    while ($row = mysqli_fetch_assoc($result)) {
+                                if (!empty($berita_data)) {
+                                    foreach ($berita_data as $row) {
                                         ?>
                                         <tr>
                                             <td><?php echo $no++; ?></td>
                                             <td>
-                                                <img src="../uploads/<?php echo htmlspecialchars($row['foto']); ?>" class="img-thumbnail-custom" alt="Foto Berita">
+                                                <img src="<?php echo htmlspecialchars(get_file_url($row['foto'])); ?>" class="img-thumbnail-custom" alt="Foto Berita">
                                             </td>
                                             <td><strong><?php echo htmlspecialchars($row['judul']); ?></strong></td>
                                             <td><?php echo date('d/m/Y', strtotime($row['tanggal_berita'])); ?></td>
@@ -135,7 +141,7 @@ $result = mysqli_query($conn, $query);
                                         <?php
                                     }
                                 } else {
-                                    echo "<tr><td colspan='5' class='text-center'>Tidak ada data berita</td></tr>";
+                                    echo "<tr><td colspan='5' class='text-center text-muted py-4'>Tidak ada data berita</td></tr>";
                                 }
                                 ?>
                             </tbody>

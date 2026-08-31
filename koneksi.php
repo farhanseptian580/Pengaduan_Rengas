@@ -1,13 +1,216 @@
 <?php
-// Koneksi Database
-$host = "localhost";
-$user = "root";
-$pass = "";
-$db   = "pengaduan_masyarakat";
+// ===================================================
+// KONEKSI DATABASE & HELPER SUPABASE
+// ===================================================
 
-$conn = mysqli_connect($host, $user, $pass, $db);
+// Fungsi sederhana untuk memuat file .env jika ada (Lokal / Development)
+function loadEnv($filePath) {
+    if (!file_exists($filePath)) {
+        return;
+    }
+    $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if (empty($line) || strpos($line, '#') === 0) {
+            continue;
+        }
+        if (strpos($line, '=') !== false) {
+            list($key, $value) = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value, " \t\n\r\0\x0B\"'");
+            if (!array_key_exists($key, $_SERVER) && !array_key_exists($key, $_ENV)) {
+                putenv(sprintf('%s=%s', $key, $value));
+                $_ENV[$key] = $value;
+                $_SERVER[$key] = $value;
+            }
+        }
+    }
+}
 
-if (!$conn) {
-    die("Koneksi gagal: " . mysqli_connect_error());
+// Cari file .env di direktori saat ini atau direktori induk
+$env_path = file_exists(__DIR__ . '/.env') ? __DIR__ . '/.env' : __DIR__ . '/../.env';
+loadEnv($env_path);
+
+// Helper untuk mengambil environment variable dengan fallback
+function getEnvVar($key, $default = '') {
+    $val = getenv($key);
+    if ($val !== false && $val !== '') {
+        return $val;
+    }
+    if (isset($_ENV[$key]) && $_ENV[$key] !== '') {
+        return $_ENV[$key];
+    }
+    if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') {
+        return $_SERVER[$key];
+    }
+    return $default;
+}
+
+// Konfigurasi Database PostgreSQL Supabase
+$host = getEnvVar('DB_HOST', 'localhost');
+$port = getEnvVar('DB_PORT', '5432');
+$db   = getEnvVar('DB_NAME', 'postgres');
+$user = getEnvVar('DB_USER', 'postgres');
+$pass = getEnvVar('DB_PASS', '');
+
+// Konfigurasi Supabase Storage
+$supabase_url    = rtrim(getEnvVar('SUPABASE_URL', ''), '/');
+$supabase_key    = getEnvVar('SUPABASE_KEY', '');
+$supabase_bucket = getEnvVar('SUPABASE_BUCKET', 'pengaduan');
+
+// Inisialisasi Koneksi PDO PostgreSQL
+$conn = null;
+$pdo = null;
+
+try {
+    // Jika koneksi ke Supabase / PostgreSQL
+    $dsn = "pgsql:host={$host};port={$port};dbname={$db}";
+    
+    // Tambahkan sslmode jika bukan localhost (misal ke cloud Supabase)
+    if ($host !== 'localhost' && $host !== '127.0.0.1') {
+        $dsn .= ";sslmode=require";
+    }
+
+    $pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ]);
+    
+    // Alias $conn untuk kompatibilitas
+    $conn = $pdo;
+} catch (PDOException $e) {
+    // Tangani error koneksi tanpa membocorkan kredensial
+    error_log("Database connection error: " . $e->getMessage());
+    $conn = null;
+    $pdo = null;
+}
+
+// ---------------------------------------------------
+// Helper Storage Supabase (Upload, URL, & Delete)
+// ---------------------------------------------------
+
+/**
+ * Upload file ke Supabase Storage Bucket
+ * 
+ * @param string $tmp_file_path Path file temporary (misal: $_FILES['foto']['tmp_name'])
+ * @param string $destination_filename Nama file tujuan yang unik
+ * @param string $mime_type MIME type file (misal: 'image/jpeg')
+ * @param string $bucket Nama bucket (default: pengaduan)
+ * @return bool True jika berhasil, False jika gagal
+ */
+function upload_to_supabase($tmp_file_path, $destination_filename, $mime_type = 'application/octet-stream', $bucket = 'pengaduan') {
+    global $supabase_url, $supabase_key, $supabase_bucket;
+    
+    if (empty($bucket)) {
+        $bucket = !empty($supabase_bucket) ? $supabase_bucket : 'pengaduan';
+    }
+
+    // Jika kredensial Supabase belum diisi, fallback simpan ke folder uploads lokal
+    if (empty($supabase_url) || empty($supabase_key)) {
+        $upload_dir = __DIR__ . '/uploads/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0777, true);
+        }
+        return move_uploaded_file($tmp_file_path, $upload_dir . $destination_filename);
+    }
+
+    $url = "{$supabase_url}/storage/v1/object/{$bucket}/{$destination_filename}";
+    $file_content = file_get_contents($tmp_file_path);
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $file_content);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer {$supabase_key}",
+        "apikey: {$supabase_key}",
+        "Content-Type: {$mime_type}",
+        "x-upsert: true"
+    ]);
+
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return ($http_code === 200 || $http_code === 201);
+}
+
+/**
+ * Dapatkan URL publik file dari Supabase Storage atau fallback lokal
+ * 
+ * @param string $filename Nama file yang tersimpan di database
+ * @param string $bucket Nama bucket (default: pengaduan)
+ * @return string URL publik gambar
+ */
+function get_file_url($filename, $bucket = 'pengaduan') {
+    global $supabase_url, $supabase_bucket;
+
+    if (empty($filename)) {
+        return 'assets/placeholder.jpg';
+    }
+
+    // Jika sudah berupa URL lengkap
+    if (strpos($filename, 'http://') === 0 || strpos($filename, 'https://') === 0) {
+        return $filename;
+    }
+
+    if (empty($bucket)) {
+        $bucket = !empty($supabase_bucket) ? $supabase_bucket : 'pengaduan';
+    }
+
+    // Jika URL Supabase dikonfigurasi
+    if (!empty($supabase_url)) {
+        return "{$supabase_url}/storage/v1/object/public/{$bucket}/{$filename}";
+    }
+
+    // Fallback lokal jika berjalan offline tanpa Supabase
+    $base_prefix = file_exists(__DIR__ . '/admin') ? '' : '../';
+    return $base_prefix . 'uploads/' . $filename;
+}
+
+/**
+ * Hapus file dari Supabase Storage Bucket
+ * 
+ * @param string $filename Nama file
+ * @param string $bucket Nama bucket
+ * @return bool
+ */
+function delete_from_supabase($filename, $bucket = 'pengaduan') {
+    global $supabase_url, $supabase_key, $supabase_bucket;
+
+    if (empty($filename)) {
+        return true;
+    }
+
+    if (empty($bucket)) {
+        $bucket = !empty($supabase_bucket) ? $supabase_bucket : 'pengaduan';
+    }
+
+    if (empty($supabase_url) || empty($supabase_key)) {
+        $local_path = __DIR__ . '/uploads/' . $filename;
+        if (file_exists($local_path)) {
+            unlink($local_path);
+        }
+        return true;
+    }
+
+    $url = "{$supabase_url}/storage/v1/object/{$bucket}/{$filename}";
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer {$supabase_key}",
+        "apikey: {$supabase_key}"
+    ]);
+
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return ($http_code >= 200 && $http_code < 300);
 }
 ?>

@@ -3,17 +3,27 @@ include 'koneksi.php';
 
 $result = null;
 $error = null;
+$data = null;
 
 if (isset($_POST['submit'])) {
-    $kode_laporan = mysqli_real_escape_string($conn, $_POST['kode_laporan']);
+    $kode_laporan = trim($_POST['kode_laporan'] ?? '');
     
-    $query = "SELECT * FROM pengaduan WHERE kode_laporan = '$kode_laporan'";
-    $result = mysqli_query($conn, $query);
-    
-    if (mysqli_num_rows($result) > 0) {
-        $data = mysqli_fetch_assoc($result);
+    if (empty($kode_laporan)) {
+        $error = "Silakan masukkan kode laporan!";
+    } elseif (!$pdo) {
+        $error = "Gagal terhubung ke database Supabase. Periksa konfigurasi .env Anda.";
     } else {
-        $error = "Kode laporan tidak ditemukan!";
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM pengaduan WHERE kode_laporan = :kode_laporan LIMIT 1");
+            $stmt->execute([':kode_laporan' => $kode_laporan]);
+            $data = $stmt->fetch();
+            
+            if (!$data) {
+                $error = "Kode laporan tidak ditemukan!";
+            }
+        } catch (PDOException $e) {
+            $error = "Terjadi kesalahan saat mencari laporan: " . $e->getMessage();
+        }
     }
 }
 ?>
@@ -108,8 +118,8 @@ if (isset($_POST['submit'])) {
                                 <div class="input-group mb-4">
                                     <input type="text" class="form-control form-control-lg" 
                                            id="kode_laporan" name="kode_laporan" 
-                                           placeholder="Masukkan Kode Laporan (contoh: LPR202405260001)" 
-                                           value="<?php echo isset($_POST['kode_laporan']) ? $_POST['kode_laporan'] : ''; ?>" required>
+                                           placeholder="Masukkan Kode Laporan (contoh: LPR202608311234)" 
+                                           value="<?php echo isset($_POST['kode_laporan']) ? htmlspecialchars($_POST['kode_laporan']) : ''; ?>" required>
                                     <button type="submit" name="submit" class="btn btn-primary btn-lg">
                                         <i class="bi bi-search"></i> Cari
                                     </button>
@@ -118,18 +128,18 @@ if (isset($_POST['submit'])) {
                             
                             <?php if ($error): ?>
                                 <div class="alert alert-danger">
-                                    <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+                                    <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
                                 </div>
                             <?php endif; ?>
                             
-                            <?php if (isset($data)): ?>
+                            <?php if ($data): ?>
                                 <div class="alert alert-info">
                                     <h4 class="alert-heading"><i class="bi bi-info-circle"></i> Detail Pengaduan</h4>
                                     <hr>
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
                                             <strong>Kode Laporan:</strong><br>
-                                            <?php echo $data['kode_laporan']; ?>
+                                            <span class="badge bg-dark fs-6"><?php echo htmlspecialchars($data['kode_laporan']); ?></span>
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <strong>Tanggal Lapor:</strong><br>
@@ -137,32 +147,32 @@ if (isset($_POST['submit'])) {
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <strong>Nama Pelapor:</strong><br>
-                                            <?php echo $data['nama']; ?>
+                                            <?php echo htmlspecialchars($data['nama']); ?>
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <strong>No HP:</strong><br>
-                                            <?php echo $data['no_hp']; ?>
+                                            <?php echo htmlspecialchars($data['no_hp']); ?>
                                         </div>
                                         <div class="col-md-12 mb-3">
                                             <strong>Judul Laporan:</strong><br>
-                                            <?php echo $data['judul_laporan']; ?>
+                                            <?php echo htmlspecialchars($data['judul_laporan']); ?>
                                         </div>
                                         <div class="col-md-12 mb-3">
                                             <strong>Deskripsi:</strong><br>
-                                            <?php echo $data['deskripsi']; ?>
+                                            <div style="white-space: pre-line;"><?php echo htmlspecialchars($data['deskripsi']); ?></div>
                                         </div>
                                         <div class="col-md-12 mb-3">
                                             <strong>Lokasi:</strong><br>
-                                            <?php echo $data['lokasi']; ?>
-                                            <?php if ($data['latitude'] && $data['longitude']): ?>
+                                            <?php echo htmlspecialchars($data['lokasi']); ?>
+                                            <?php if (!empty($data['latitude']) && !empty($data['longitude'])): ?>
                                                 <div id="map"></div>
-                                                <input type="hidden" id="latitude" value="<?php echo $data['latitude']; ?>">
-                                                <input type="hidden" id="longitude" value="<?php echo $data['longitude']; ?>">
+                                                <input type="hidden" id="latitude" value="<?php echo htmlspecialchars($data['latitude']); ?>">
+                                                <input type="hidden" id="longitude" value="<?php echo htmlspecialchars($data['longitude']); ?>">
                                             <?php endif; ?>
                                         </div>
                                         <div class="col-md-12 mb-3">
-                                            <strong>Foto Bukti:</strong><br>
-                                            <img src="uploads/<?php echo $data['foto']; ?>" class="img-fluid rounded" alt="Foto Bukti" style="max-height: 300px;">
+                                            <strong>Foto Bukti Laporan:</strong><br>
+                                            <img src="<?php echo htmlspecialchars(get_file_url($data['foto'])); ?>" class="img-fluid rounded mt-2 border" alt="Foto Bukti" style="max-height: 300px;">
                                         </div>
                                         <div class="col-md-12 mb-3">
                                             <strong>Status:</strong><br>
@@ -177,14 +187,14 @@ if (isset($_POST['submit'])) {
                                             }
                                             ?>
                                             <span class="badge <?php echo $status_class; ?> status-badge">
-                                                <i class="bi bi-clock"></i> <?php echo $data['status']; ?>
+                                                <i class="bi bi-clock"></i> <?php echo htmlspecialchars($data['status']); ?>
                                             </span>
                                         </div>
-                                        <?php if ($data['tanggapan']): ?>
+                                        <?php if (!empty($data['tanggapan'])): ?>
                                             <div class="col-md-12 mb-3">
                                                 <strong>Tanggapan Admin:</strong><br>
-                                                <div class="alert alert-success">
-                                                    <?php echo $data['tanggapan']; ?>
+                                                <div class="alert alert-success mt-2">
+                                                    <?php echo nl2br(htmlspecialchars($data['tanggapan'])); ?>
                                                 </div>
                                             </div>
                                         <?php endif; ?>
@@ -192,7 +202,7 @@ if (isset($_POST['submit'])) {
                                         <?php if (!empty($data['foto_selesai']) && $data['status'] == 'Selesai'): ?>
                                             <div class="col-md-12 mb-3">
                                                 <strong>Foto Bukti Laporan Selesai:</strong><br>
-                                                <img src="uploads/<?php echo $data['foto_selesai']; ?>" class="img-fluid rounded border border-success p-1" alt="Foto Bukti Selesai" style="max-height: 300px;">
+                                                <img src="<?php echo htmlspecialchars(get_file_url($data['foto_selesai'])); ?>" class="img-fluid rounded border border-success p-1 mt-2" alt="Foto Bukti Selesai" style="max-height: 300px;">
                                             </div>
                                         <?php endif; ?>
                                     </div>
@@ -215,18 +225,15 @@ if (isset($_POST['submit'])) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        <?php if (isset($data) && $data['latitude'] && $data['longitude']): ?>
-            // Inisialisasi peta dengan koordinat dari database
-            var lat = <?php echo $data['latitude']; ?>;
-            var lng = <?php echo $data['longitude']; ?>;
+        <?php if ($data && !empty($data['latitude']) && !empty($data['longitude'])): ?>
+            var lat = <?php echo floatval($data['latitude']); ?>;
+            var lng = <?php echo floatval($data['longitude']); ?>;
             var map = L.map('map').setView([lat, lng], 15);
             
-            // Tambahkan tile layer
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
             
-            // Tambahkan marker di lokasi
             L.marker([lat, lng]).addTo(map)
                 .bindPopup('Lokasi Kejadian')
                 .openPopup();

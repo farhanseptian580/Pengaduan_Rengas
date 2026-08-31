@@ -2,8 +2,15 @@
 include 'koneksi.php';
 
 // Ambil berita terbaru (3 berita terbaru)
-$query_berita = "SELECT * FROM berita ORDER BY tanggal_berita DESC LIMIT 3";
-$result_berita = mysqli_query($conn, $query_berita);
+$berita_list = [];
+if ($pdo) {
+    try {
+        $stmt = $pdo->query("SELECT * FROM berita ORDER BY tanggal_berita DESC, id_berita DESC LIMIT 3");
+        $berita_list = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Error query berita: " . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -96,8 +103,8 @@ $result_berita = mysqli_query($conn, $query_berita);
         <!-- Features Section -->
         <section class="py-5">
             <div class="container">
-               <div class="row justify-content-center">
-                   <div class="col-md-5 col-lg-4 mb-4">
+                <div class="row justify-content-center">
+                    <div class="col-md-5 col-lg-4 mb-4">
                         <div class="card card-custom h-100 p-4 text-center position-relative">
                             <div class="card-body">
                                 <i class="bi bi-pencil-square display-4 text-primary mb-3"></i>
@@ -131,11 +138,11 @@ $result_berita = mysqli_query($conn, $query_berita);
                 <p class="text-muted">Ikuti perkembangan dan informasi terbaru mengenai kelurahan kami</p>
             </div>
             <div class="row">
-                <?php if (mysqli_num_rows($result_berita) > 0): ?>
-                    <?php while ($row = mysqli_fetch_assoc($result_berita)): ?>
+                <?php if (!empty($berita_list)): ?>
+                    <?php foreach ($berita_list as $row): ?>
                         <div class="col-md-6 col-lg-4 mb-4">
                             <div class="card card-custom h-100">
-                                <img src="uploads/<?php echo htmlspecialchars($row['foto']); ?>" class="card-img-top" alt="<?php echo htmlspecialchars($row['judul']); ?>" style="height: 200px; object-fit: cover; border-top-left-radius: 15px; border-top-right-radius: 15px;">
+                                <img src="<?php echo htmlspecialchars(get_file_url($row['foto'])); ?>" class="card-img-top" alt="<?php echo htmlspecialchars($row['judul']); ?>" style="height: 200px; object-fit: cover; border-top-left-radius: 15px; border-top-right-radius: 15px;">
                                 <div class="card-body d-flex flex-column bg-white" style="border-bottom-left-radius: 15px; border-bottom-right-radius: 15px;">
                                     <small class="text-primary mb-2 d-block">
                                         <i class="bi bi-calendar3"></i> <?php echo date('d M Y', strtotime($row['tanggal_berita'])); ?>
@@ -158,7 +165,7 @@ $result_berita = mysqli_query($conn, $query_berita);
                         <div class="modal fade" id="modalBerita<?php echo $row['id_berita']; ?>" tabindex="-1" aria-labelledby="modalLabel<?php echo $row['id_berita']; ?>" aria-hidden="true">
                             <div class="modal-dialog modal-dialog-centered modal-lg">
                                 <div class="modal-content" style="border-radius: 15px; border: none; overflow: hidden;">
-                                    <img src="uploads/<?php echo htmlspecialchars($row['foto']); ?>" class="w-100" alt="<?php echo htmlspecialchars($row['judul']); ?>" style="max-height: 400px; object-fit: cover;">
+                                    <img src="<?php echo htmlspecialchars(get_file_url($row['foto'])); ?>" class="w-100" alt="<?php echo htmlspecialchars($row['judul']); ?>" style="max-height: 400px; object-fit: cover;">
                                     <div class="modal-body p-4">
                                         <div class="d-flex justify-content-between align-items-center mb-3">
                                             <span class="badge bg-primary">
@@ -177,7 +184,7 @@ $result_berita = mysqli_query($conn, $query_berita);
                                 </div>
                             </div>
                         </div>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 <?php else: ?>
                     <div class="col-12 text-center">
                         <div class="p-5 text-muted">

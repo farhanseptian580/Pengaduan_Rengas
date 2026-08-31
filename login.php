@@ -4,28 +4,39 @@ include 'koneksi.php';
 session_start();
 
 // Cek jika sudah login
-if (isset($_SESSION['admin_logged_in'])) {
+if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
     header("Location: admin/dashboard.php");
     exit();
 }
 
 // Proses login
 if (isset($_POST['login'])) {
-    $username = mysqli_real_escape_string($conn, $_POST['username']);
-    $password = mysqli_real_escape_string($conn, $_POST['password']);
+    $username = trim($_POST['username'] ?? '');
+    $password = trim($_POST['password'] ?? '');
     
-    $query = "SELECT * FROM admin WHERE username = '$username' AND password = '$password'";
-    $result = mysqli_query($conn, $query);
-    
-    if (mysqli_num_rows($result) > 0) {
-        $data = mysqli_fetch_assoc($result);
-        $_SESSION['admin_logged_in'] = true;
-        $_SESSION['id_admin'] = $data['id_admin'];
-        $_SESSION['nama_admin'] = $data['nama_lengkap'];
-        header("Location: admin/dashboard.php");
-        exit();
+    if (empty($username) || empty($password)) {
+        $error = "Username dan password wajib diisi!";
+    } elseif (!$pdo) {
+        $error = "Gagal terhubung ke database Supabase. Periksa pengaturan koneksi Anda.";
     } else {
-        $error = "Username atau password salah!";
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM admin WHERE username = :username LIMIT 1");
+            $stmt->execute([':username' => $username]);
+            $admin = $stmt->fetch();
+            
+            // Cek password (bisa plaintext seperti di sql bawaan atau password_verify jika hash)
+            if ($admin && ($password === $admin['password'] || (function_exists('password_verify') && password_verify($password, $admin['password'])))) {
+                $_SESSION['admin_logged_in'] = true;
+                $_SESSION['id_admin'] = $admin['id_admin'];
+                $_SESSION['nama_admin'] = $admin['nama_lengkap'];
+                header("Location: admin/dashboard.php");
+                exit();
+            } else {
+                $error = "Username atau password salah!";
+            }
+        } catch (PDOException $e) {
+            $error = "Terjadi kesalahan saat memproses login: " . $e->getMessage();
+        }
     }
 }
 ?>
@@ -71,7 +82,7 @@ if (isset($_POST['login'])) {
                         
                         <?php if (isset($error)): ?>
                             <div class="alert alert-danger">
-                                <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+                                <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
                             </div>
                         <?php endif; ?>
                         
@@ -80,7 +91,7 @@ if (isset($_POST['login'])) {
                                 <label for="username" class="form-label">Username</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                    <input type="text" class="form-control" id="username" name="username" required>
+                                    <input type="text" class="form-control" id="username" name="username" value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" required>
                                 </div>
                             </div>
                             
