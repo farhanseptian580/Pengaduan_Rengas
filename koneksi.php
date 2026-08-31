@@ -66,6 +66,15 @@ if (!empty($database_url)) {
     }
 }
 
+// Bersihkan format host jika pengguna menyertakan https:// atau port di dalamnya
+$host = preg_replace('#^https?://#', '', trim($host));
+$host = rtrim($host, '/');
+if (strpos($host, ':') !== false) {
+    list($host_clean, $port_clean) = explode(':', $host, 2);
+    $host = $host_clean;
+    if (!empty($port_clean)) $port = $port_clean;
+}
+
 // Konfigurasi Supabase Storage
 $supabase_url    = rtrim(getEnvVar('SUPABASE_URL', ''), '/');
 $supabase_key    = getEnvVar('SUPABASE_KEY', getEnvVar('SUPABASE_ANON_KEY', getEnvVar('SUPABASE_SERVICE_ROLE_KEY', '')));
