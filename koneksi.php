@@ -118,32 +118,37 @@ try {
 // Helper Storage Supabase (Upload, URL, & Delete)
 // ---------------------------------------------------
 
+$last_storage_error = null;
+
 /**
  * Upload file ke Supabase Storage Bucket
  */
 function upload_to_supabase($tmp_file_path, $destination_filename, $mime_type = 'application/octet-stream', $bucket = 'pengaduan') {
-    global $supabase_url, $supabase_key, $supabase_bucket;
+    global $supabase_url, $supabase_key, $supabase_bucket, $last_storage_error;
+    $last_storage_error = null;
     
     if (empty($bucket)) {
         $bucket = !empty($supabase_bucket) ? $supabase_bucket : 'pengaduan';
     }
 
     if (empty($supabase_url) || empty($supabase_key)) {
-        $upload_dir = __DIR__ . '/uploads/';
-        if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-        }
-        return move_uploaded_file($tmp_file_path, $upload_dir . $destination_filename);
+        $last_storage_error = "SUPABASE_URL atau SUPABASE_KEY belum diisi di Environment Variables.";
+        return false;
     }
 
     $url = "{$supabase_url}/storage/v1/object/{$bucket}/{$destination_filename}";
-    $file_content = file_get_contents($tmp_file_path);
+    $file_content = @file_get_contents($tmp_file_path);
+    if ($file_content === false) {
+        $last_storage_error = "Tidak dapat membaca file temporary yang diunggah.";
+        return false;
+    }
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $file_content);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         "Authorization: Bearer {$supabase_key}",
         "apikey: {$supabase_key}",
@@ -153,9 +158,22 @@ function upload_to_supabase($tmp_file_path, $destination_filename, $mime_type = 
 
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err = curl_error($ch);
     curl_close($ch);
 
-    return ($http_code === 200 || $http_code === 201);
+    if ($http_code === 200 || $http_code === 201) {
+        return true;
+    }
+
+    if (!empty($curl_err)) {
+        $last_storage_error = "cURL: {$curl_err}";
+    } else {
+        $json = json_decode($response, true);
+        $msg = $json['message'] ?? ($json['error'] ?? $response);
+        $last_storage_error = "HTTP {$http_code}: {$msg}";
+    }
+    error_log("Supabase storage upload failed: {$last_storage_error}");
+    return false;
 }
 
 /**

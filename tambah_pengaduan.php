@@ -36,7 +36,9 @@ if (isset($_POST['submit'])) {
                 
                 $uploaded = upload_to_supabase($tmp_foto, $foto_db, $mime_type, 'pengaduan');
                 if (!$uploaded) {
-                    $error = "Gagal mengunggah foto ke Supabase Storage. Pastikan bucket 'pengaduan' sudah dibuat dan public.";
+                    global $last_storage_error;
+                    $detail = !empty($last_storage_error) ? " ({$last_storage_error})" : "";
+                    $error = "Gagal mengunggah foto ke Supabase Storage{$detail}. Pastikan menggunakan service_role key atau aktifkan RLS policy INSERT.";
                 }
             } else {
                 $error = "Format foto tidak didukung. Harap gunakan format JPG, JPEG, PNG, GIF, atau WEBP.";

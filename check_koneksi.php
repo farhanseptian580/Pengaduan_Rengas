@@ -98,47 +98,52 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
 
     $diagnostics['storage']['latency_ms'] = round((microtime(true) - $storage_start) * 1000, 2);
 
-    if ($http_code_b === 200) {
-        $bucket_info = json_decode($response_b, true);
-        $diagnostics['storage']['status'] = 'CONNECTED';
-        $diagnostics['storage']['message'] = "Supabase Storage API aktif (HTTP {$http_code_b}).";
+    // 2. Tes Upload File Ping ke Bucket
+    $test_upload_status = 'NOT_TESTED';
+    $test_upload_msg = '';
+    
+    $ping_url = "{$supabase_url}/storage/v1/object/{$supabase_bucket}/test_health_ping.txt";
+    $ping_content = "ping-" . time();
+    $ch_p = curl_init();
+    curl_setopt($ch_p, CURLOPT_URL, $ping_url);
+    curl_setopt($ch_p, CURLOPT_POST, true);
+    curl_setopt($ch_p, CURLOPT_POSTFIELDS, $ping_content);
+    curl_setopt($ch_p, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch_p, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch_p, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer {$supabase_key}",
+        "apikey: {$supabase_key}",
+        "Content-Type: text/plain",
+        "x-upsert: true"
+    ]);
+    $ping_res = curl_exec($ch_p);
+    $ping_code = curl_getinfo($ch_p, CURLINFO_HTTP_CODE);
+    curl_close($ch_p);
+
+    if ($ping_code === 200 || $ping_code === 201) {
+        $test_upload_status = 'SUCCESS';
+        $test_upload_msg = 'Izin upload berfungsi dengan baik.';
         $diagnostics['storage']['bucket_found'] = true;
-        $diagnostics['storage']['bucket_public'] = !empty($bucket_info['public']);
-    } else {
-        // Fallback cek list bucket
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "{$supabase_url}/storage/v1/bucket");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        // Hapus file test
+        $ch_d = curl_init();
+        curl_setopt($ch_d, CURLOPT_URL, $ping_url);
+        curl_setopt($ch_d, CURLOPT_CUSTOMREQUEST, "DELETE");
+        curl_setopt($ch_d, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_d, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$supabase_key}",
             "apikey: {$supabase_key}"
         ]);
-
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_err = curl_error($ch);
-        curl_close($ch);
-
-        if ($http_code >= 200 && $http_code < 300) {
-            $buckets = json_decode($response, true);
-            $diagnostics['storage']['status'] = 'CONNECTED';
-            $diagnostics['storage']['message'] = "Supabase Storage API aktif (HTTP {$http_code}).";
-            
-            if (is_array($buckets)) {
-                foreach ($buckets as $b) {
-                    if (isset($b['name']) && $b['name'] === $supabase_bucket) {
-                        $diagnostics['storage']['bucket_found'] = true;
-                        $diagnostics['storage']['bucket_public'] = !empty($b['public']);
-                        break;
-                    }
-                }
-            }
-        } else {
-            $diagnostics['storage']['status'] = 'FAILED';
-            $diagnostics['storage']['message'] = $curl_err ? "cURL Error: {$curl_err}" : "Supabase API merespon HTTP {$http_code}: {$response}";
-        }
+        curl_exec($ch_d);
+        curl_close($ch_d);
+    } else {
+        $test_upload_status = 'FAILED';
+        $test_upload_msg = "HTTP {$ping_code}: " . ($ping_res ?: 'Tidak dapat upload ke bucket.');
     }
+    
+    $diagnostics['storage']['test_upload'] = [
+        'status' => $test_upload_status,
+        'message' => $test_upload_msg
+    ];
 } else {
     $diagnostics['storage']['status'] = 'NOT_CONFIGURED';
     $diagnostics['storage']['message'] = 'SUPABASE_URL atau SUPABASE_KEY belum diisi di Environment Variables.';
