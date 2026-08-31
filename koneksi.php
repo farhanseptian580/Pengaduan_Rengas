@@ -47,26 +47,44 @@ function getEnvVar($key, $default = '') {
 }
 
 // Konfigurasi Database PostgreSQL Supabase
-$host = getEnvVar('DB_HOST', 'localhost');
-$port = getEnvVar('DB_PORT', '5432');
-$db   = getEnvVar('DB_NAME', 'postgres');
-$user = getEnvVar('DB_USER', 'postgres');
-$pass = getEnvVar('DB_PASS', '');
+$host = getEnvVar('DB_HOST', getEnvVar('PGHOST', 'localhost'));
+$port = getEnvVar('DB_PORT', getEnvVar('PGPORT', '5432'));
+$db   = getEnvVar('DB_NAME', getEnvVar('PGDATABASE', 'postgres'));
+$user = getEnvVar('DB_USER', getEnvVar('PGUSER', 'postgres'));
+$pass = getEnvVar('DB_PASS', getEnvVar('PGPASSWORD', ''));
+
+// Dukungan jika pengguna memasukkan DATABASE_URL / POSTGRES_URL lengkap (URI Connection String)
+$database_url = getEnvVar('DATABASE_URL', getEnvVar('POSTGRES_URL', ''));
+if (!empty($database_url)) {
+    $parsed_url = parse_url($database_url);
+    if ($parsed_url) {
+        if (!empty($parsed_url['host'])) $host = $parsed_url['host'];
+        if (!empty($parsed_url['port'])) $port = $parsed_url['port'];
+        if (!empty($parsed_url['user'])) $user = urldecode($parsed_url['user']);
+        if (!empty($parsed_url['pass'])) $pass = urldecode($parsed_url['pass']);
+        if (!empty($parsed_url['path'])) $db   = ltrim(urldecode($parsed_url['path']), '/');
+    }
+}
 
 // Konfigurasi Supabase Storage
 $supabase_url    = rtrim(getEnvVar('SUPABASE_URL', ''), '/');
-$supabase_key    = getEnvVar('SUPABASE_KEY', '');
+$supabase_key    = getEnvVar('SUPABASE_KEY', getEnvVar('SUPABASE_ANON_KEY', getEnvVar('SUPABASE_SERVICE_ROLE_KEY', '')));
 $supabase_bucket = getEnvVar('SUPABASE_BUCKET', 'pengaduan');
 
 // Inisialisasi Koneksi PDO PostgreSQL
 $conn = null;
 $pdo = null;
+$db_error = null;
 
 try {
-    // Jika koneksi ke Supabase / PostgreSQL
+    // Validasi apakah kredensial sudah diisi atau masih localhost/kosong
+    if ($host === 'localhost' || empty($pass)) {
+        throw new Exception("Kredensial database belum dikonfigurasi di Environment Variables.");
+    }
+
     $dsn = "pgsql:host={$host};port={$port};dbname={$db}";
     
-    // Tambahkan sslmode jika bukan localhost (misal ke cloud Supabase)
+    // Tambahkan sslmode jika koneksi cloud
     if ($host !== 'localhost' && $host !== '127.0.0.1') {
         $dsn .= ";sslmode=require";
     }
@@ -75,13 +93,14 @@ try {
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
+        PDO::ATTR_TIMEOUT            => 5,
     ]);
     
     // Alias $conn untuk kompatibilitas
     $conn = $pdo;
-} catch (PDOException $e) {
-    // Tangani error koneksi tanpa membocorkan kredensial
-    error_log("Database connection error: " . $e->getMessage());
+} catch (Throwable $e) {
+    $db_error = $e->getMessage();
+    error_log("Database connection error: " . $db_error);
     $conn = null;
     $pdo = null;
 }
@@ -92,12 +111,6 @@ try {
 
 /**
  * Upload file ke Supabase Storage Bucket
- * 
- * @param string $tmp_file_path Path file temporary (misal: $_FILES['foto']['tmp_name'])
- * @param string $destination_filename Nama file tujuan yang unik
- * @param string $mime_type MIME type file (misal: 'image/jpeg')
- * @param string $bucket Nama bucket (default: pengaduan)
- * @return bool True jika berhasil, False jika gagal
  */
 function upload_to_supabase($tmp_file_path, $destination_filename, $mime_type = 'application/octet-stream', $bucket = 'pengaduan') {
     global $supabase_url, $supabase_key, $supabase_bucket;
@@ -106,7 +119,6 @@ function upload_to_supabase($tmp_file_path, $destination_filename, $mime_type = 
         $bucket = !empty($supabase_bucket) ? $supabase_bucket : 'pengaduan';
     }
 
-    // Jika kredensial Supabase belum diisi, fallback simpan ke folder uploads lokal
     if (empty($supabase_url) || empty($supabase_key)) {
         $upload_dir = __DIR__ . '/uploads/';
         if (!is_dir($upload_dir)) {
@@ -139,10 +151,6 @@ function upload_to_supabase($tmp_file_path, $destination_filename, $mime_type = 
 
 /**
  * Dapatkan URL publik file dari Supabase Storage atau fallback lokal
- * 
- * @param string $filename Nama file yang tersimpan di database
- * @param string $bucket Nama bucket (default: pengaduan)
- * @return string URL publik gambar
  */
 function get_file_url($filename, $bucket = 'pengaduan') {
     global $supabase_url, $supabase_bucket;
@@ -151,7 +159,6 @@ function get_file_url($filename, $bucket = 'pengaduan') {
         return 'assets/placeholder.jpg';
     }
 
-    // Jika sudah berupa URL lengkap
     if (strpos($filename, 'http://') === 0 || strpos($filename, 'https://') === 0) {
         return $filename;
     }
@@ -160,22 +167,16 @@ function get_file_url($filename, $bucket = 'pengaduan') {
         $bucket = !empty($supabase_bucket) ? $supabase_bucket : 'pengaduan';
     }
 
-    // Jika URL Supabase dikonfigurasi
     if (!empty($supabase_url)) {
         return "{$supabase_url}/storage/v1/object/public/{$bucket}/{$filename}";
     }
 
-    // Fallback lokal jika berjalan offline tanpa Supabase
     $base_prefix = file_exists(__DIR__ . '/admin') ? '' : '../';
     return $base_prefix . 'uploads/' . $filename;
 }
 
 /**
  * Hapus file dari Supabase Storage Bucket
- * 
- * @param string $filename Nama file
- * @param string $bucket Nama bucket
- * @return bool
  */
 function delete_from_supabase($filename, $bucket = 'pengaduan') {
     global $supabase_url, $supabase_key, $supabase_bucket;

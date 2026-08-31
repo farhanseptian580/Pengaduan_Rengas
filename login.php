@@ -17,14 +17,14 @@ if (isset($_POST['login'])) {
     if (empty($username) || empty($password)) {
         $error = "Username dan password wajib diisi!";
     } elseif (!$pdo) {
-        $error = "Gagal terhubung ke database Supabase. Periksa pengaturan koneksi Anda.";
+        global $db_error;
+        $error = "Gagal terhubung ke database Supabase (" . ($db_error ?: 'Periksa pengaturan Environment Variables di Vercel') . ").";
     } else {
         try {
             $stmt = $pdo->prepare("SELECT * FROM admin WHERE username = :username LIMIT 1");
             $stmt->execute([':username' => $username]);
             $admin = $stmt->fetch();
             
-            // Cek password (bisa plaintext seperti di sql bawaan atau password_verify jika hash)
             if ($admin && ($password === $admin['password'] || (function_exists('password_verify') && password_verify($password, $admin['password'])))) {
                 $_SESSION['admin_logged_in'] = true;
                 $_SESSION['id_admin'] = $admin['id_admin'];
