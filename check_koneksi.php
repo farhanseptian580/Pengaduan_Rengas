@@ -83,39 +83,61 @@ if ($pdo) {
 // 2. Tes Koneksi Supabase Storage API
 $storage_start = microtime(true);
 if (!empty($supabase_url) && !empty($supabase_key)) {
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "{$supabase_url}/storage/v1/bucket");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    // Cek detail bucket langsung
+    $ch_b = curl_init();
+    curl_setopt($ch_b, CURLOPT_URL, "{$supabase_url}/storage/v1/bucket/{$supabase_bucket}");
+    curl_setopt($ch_b, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch_b, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch_b, CURLOPT_HTTPHEADER, [
         "Authorization: Bearer {$supabase_key}",
         "apikey: {$supabase_key}"
     ]);
-
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_err = curl_error($ch);
-    curl_close($ch);
+    $response_b = curl_exec($ch_b);
+    $http_code_b = curl_getinfo($ch_b, CURLINFO_HTTP_CODE);
+    curl_close($ch_b);
 
     $diagnostics['storage']['latency_ms'] = round((microtime(true) - $storage_start) * 1000, 2);
 
-    if ($http_code >= 200 && $http_code < 300) {
-        $buckets = json_decode($response, true);
+    if ($http_code_b === 200) {
+        $bucket_info = json_decode($response_b, true);
         $diagnostics['storage']['status'] = 'CONNECTED';
-        $diagnostics['storage']['message'] = "Supabase Storage API aktif (HTTP {$http_code}).";
-        
-        if (is_array($buckets)) {
-            foreach ($buckets as $b) {
-                if (isset($b['name']) && $b['name'] === $supabase_bucket) {
-                    $diagnostics['storage']['bucket_found'] = true;
-                    $diagnostics['storage']['bucket_public'] = !empty($b['public']);
-                    break;
+        $diagnostics['storage']['message'] = "Supabase Storage API aktif (HTTP {$http_code_b}).";
+        $diagnostics['storage']['bucket_found'] = true;
+        $diagnostics['storage']['bucket_public'] = !empty($bucket_info['public']);
+    } else {
+        // Fallback cek list bucket
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "{$supabase_url}/storage/v1/bucket");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$supabase_key}",
+            "apikey: {$supabase_key}"
+        ]);
+
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err = curl_error($ch);
+        curl_close($ch);
+
+        if ($http_code >= 200 && $http_code < 300) {
+            $buckets = json_decode($response, true);
+            $diagnostics['storage']['status'] = 'CONNECTED';
+            $diagnostics['storage']['message'] = "Supabase Storage API aktif (HTTP {$http_code}).";
+            
+            if (is_array($buckets)) {
+                foreach ($buckets as $b) {
+                    if (isset($b['name']) && $b['name'] === $supabase_bucket) {
+                        $diagnostics['storage']['bucket_found'] = true;
+                        $diagnostics['storage']['bucket_public'] = !empty($b['public']);
+                        break;
+                    }
                 }
             }
+        } else {
+            $diagnostics['storage']['status'] = 'FAILED';
+            $diagnostics['storage']['message'] = $curl_err ? "cURL Error: {$curl_err}" : "Supabase API merespon HTTP {$http_code}: {$response}";
         }
-    } else {
-        $diagnostics['storage']['status'] = 'FAILED';
-        $diagnostics['storage']['message'] = $curl_err ? "cURL Error: {$curl_err}" : "Supabase API merespon HTTP {$http_code}: {$response}";
     }
 } else {
     $diagnostics['storage']['status'] = 'NOT_CONFIGURED';
