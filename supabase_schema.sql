@@ -66,32 +66,3 @@ VALUES
     '2026-08-25'
 )
 ON CONFLICT DO NOTHING;
-
--- ---------------------------------------------------
--- Setup Storage Bucket di Supabase
--- ---------------------------------------------------
--- Catatan: Anda juga bisa membuat bucket 'pengaduan' langsung lewat menu Storage di Dashboard Supabase.
--- Pastikan 'Public bucket' diaktifkan agar foto pengaduan & berita dapat diakses secara publik.
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('pengaduan', 'pengaduan', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
-
--- Policy agar semua orang bisa melihat file (Public Read)
-CREATE POLICY "Public Access" 
-ON storage.objects FOR SELECT 
-USING (bucket_id = 'pengaduan');
-
--- Policy agar user/service role bisa upload file
-CREATE POLICY "Allow Upload" 
-ON storage.objects FOR INSERT 
-WITH CHECK (bucket_id = 'pengaduan');
-
--- Policy agar user/service role bisa update file
-CREATE POLICY "Allow Update" 
-ON storage.objects FOR UPDATE 
-USING (bucket_id = 'pengaduan');
-
--- Policy agar user/service role bisa delete file
-CREATE POLICY "Allow Delete" 
-ON storage.objects FOR DELETE 
-USING (bucket_id = 'pengaduan');
