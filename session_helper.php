@@ -22,10 +22,6 @@ if (!defined('SESSION_HELPER_LOADED')) {
      * Simpan session ke signed cookie secara aman
      */
     function save_serverless_session() {
-        if (headers_sent()) {
-            return false;
-        }
-
         $cookie_name = 'rengas_admin_auth';
         $secret = get_session_secret();
 
@@ -39,13 +35,16 @@ if (!defined('SESSION_HELPER_LOADED')) {
             $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
                         (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-            return setcookie($cookie_name, $cookie_val, [
+            // Gunakan setcookie standar
+            setcookie($cookie_name, $cookie_val, [
                 'expires' => time() + (86400 * 7),
                 'path' => '/',
                 'secure' => $is_https,
                 'httponly' => true,
                 'samesite' => 'Lax'
             ]);
+            $_COOKIE[$cookie_name] = $cookie_val;
+            return true;
         }
         return false;
     }
@@ -54,15 +53,16 @@ if (!defined('SESSION_HELPER_LOADED')) {
      * Inisialisasi session berbasis signed cookie agar persisten di serverless Lambda Vercel
      */
     function init_serverless_session() {
+        // 1. Jalankan session_start bawaan PHP terlebih dahulu
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
         $cookie_name = 'rengas_admin_auth';
         $secret = get_session_secret();
 
-        if (!isset($_SESSION)) {
-            $_SESSION = [];
-        }
-
-        // Baca data session dari cookie bertanda tangan HMAC
-        if (isset($_COOKIE[$cookie_name])) {
+        // 2. Jika $_SESSION belum ada/hilang karena stateless Lambda, pulihkan dari signed cookie
+        if (empty($_SESSION['admin_logged_in']) && isset($_COOKIE[$cookie_name])) {
             $parts = explode('.', $_COOKIE[$cookie_name], 2);
             if (count($parts) === 2) {
                 list($payload_b64, $signature) = $parts;
@@ -79,18 +79,6 @@ if (!defined('SESSION_HELPER_LOADED')) {
                 }
             }
         }
-
-        // Buka session bawaan jika belum aktif
-        if (session_status() === PHP_SESSION_NONE) {
-            @session_start();
-        }
-
-        // Sinkronisasi session ke signed cookie saat script selesai dieksekusi
-        register_shutdown_function(function() {
-            if (!headers_sent()) {
-                save_serverless_session();
-            }
-        });
     }
 
     /**
@@ -101,15 +89,14 @@ if (!defined('SESSION_HELPER_LOADED')) {
         $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
                     (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-        if (!headers_sent()) {
-            setcookie($cookie_name, '', [
-                'expires' => time() - 3600,
-                'path' => '/',
-                'secure' => $is_https,
-                'httponly' => true,
-                'samesite' => 'Lax'
-            ]);
-        }
+        setcookie($cookie_name, '', [
+            'expires' => time() - 3600,
+            'path' => '/',
+            'secure' => $is_https,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+        unset($_COOKIE[$cookie_name]);
 
         $_SESSION = [];
         if (session_status() === PHP_SESSION_ACTIVE) {
