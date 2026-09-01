@@ -340,13 +340,20 @@ if (!$data) {
                             <div class="form-text small">Unggah foto hasil penanganan sebagai bukti laporan telah tuntas.</div>
                         </div>
                         
-                        <div class="d-flex flex-column flex-sm-row gap-2 pt-2">
-                            <button type="submit" name="update" class="btn btn-primary btn-action-lg shadow-sm">
-                                <i class="bi bi-check-lg me-1"></i> Simpan Perubahan
-                            </button>
-                            <a href="data_pengaduan.php" class="btn btn-outline-secondary btn-action-lg d-flex align-items-center justify-content-center">
-                                Batal
-                            </a>
+                        <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 pt-2">
+                            <div class="d-flex flex-column flex-sm-row gap-2">
+                                <button type="submit" name="update" class="btn btn-primary btn-action-lg shadow-sm">
+                                    <i class="bi bi-check-lg me-1"></i> Simpan Perubahan
+                                </button>
+                                <a href="data_pengaduan.php" class="btn btn-outline-secondary btn-action-lg d-flex align-items-center justify-content-center">
+                                    Batal
+                                </a>
+                            </div>
+                            <div>
+                                <a href="hapus_pengaduan.php?id=<?php echo $data['id_pengaduan']; ?>" class="btn btn-outline-danger btn-action-lg w-100 d-flex align-items-center justify-content-center" onclick="return confirm('Apakah Anda yakin ingin menghapus pengaduan ini (Kode: <?php echo htmlspecialchars($data['kode_laporan']); ?>)?\n\nData dan file foto terkait akan dihapus secara permanen.')">
+                                    <i class="bi bi-trash me-1"></i> Hapus Pengaduan
+                                </a>
+                            </div>
                         </div>
                     </form>
                 </div>

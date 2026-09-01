@@ -244,9 +244,14 @@ if ($pdo) {
                                             <td><span class="badge <?php echo $status_badge; ?> px-2 py-1"><?php echo htmlspecialchars($row['status']); ?></span></td>
                                             <td class="small text-muted"><?php echo date('d/m/Y H:i', strtotime($row['tanggal_lapor'])); ?></td>
                                             <td class="text-end">
-                                                <a href="update_status.php?id=<?php echo $row['id_pengaduan']; ?>" class="btn btn-sm btn-primary rounded-pill px-3 py-1" style="min-height: 36px; display: inline-flex; align-items: center;">
-                                                    <i class="bi bi-pencil-square me-1"></i> Detail / Update
-                                                </a>
+                                                <div class="d-inline-flex gap-1">
+                                                    <a href="update_status.php?id=<?php echo $row['id_pengaduan']; ?>" class="btn btn-sm btn-primary rounded-pill px-3 py-1" style="min-height: 36px; display: inline-flex; align-items: center;">
+                                                        <i class="bi bi-pencil-square me-1"></i> Detail
+                                                    </a>
+                                                    <a href="hapus_pengaduan.php?id=<?php echo $row['id_pengaduan']; ?>" class="btn btn-sm btn-outline-danger rounded-pill px-2 py-1" style="min-height: 36px; display: inline-flex; align-items: center;" onclick="return confirm('Apakah Anda yakin ingin menghapus pengaduan ini (Kode: <?php echo htmlspecialchars($row['kode_laporan']); ?>)?\n\nData dan file foto terkait akan dihapus secara permanen.')" title="Hapus Pengaduan">
+                                                        <i class="bi bi-trash"></i>
+                                                    </a>
+                                                </div>
                                             </td>
                                         </tr>
                                         <?php
