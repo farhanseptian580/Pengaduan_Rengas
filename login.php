@@ -27,6 +27,7 @@ if (isset($_POST['login'])) {
                 $_SESSION['admin_logged_in'] = true;
                 $_SESSION['id_admin'] = $admin['id_admin'];
                 $_SESSION['nama_admin'] = $admin['nama_lengkap'];
+                save_serverless_session();
                 header("Location: admin/dashboard.php");
                 exit();
             } else {

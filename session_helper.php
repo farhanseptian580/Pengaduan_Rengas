@@ -6,11 +6,48 @@
 if (!defined('SESSION_HELPER_LOADED')) {
     define('SESSION_HELPER_LOADED', true);
 
+    // Aktifkan output buffering sedini mungkin agar header cookie bisa dikirim tanpa error
+    if (ob_get_level() == 0) {
+        ob_start();
+    }
+
     function get_session_secret() {
         $sec = getenv('SESSION_SECRET');
         if (!empty($sec)) return $sec;
         if (!empty($_ENV['SESSION_SECRET'])) return $_ENV['SESSION_SECRET'];
         return 'kelurahan_rengas_session_secure_key_2026_x89@supabase';
+    }
+
+    /**
+     * Simpan session ke signed cookie secara aman
+     */
+    function save_serverless_session() {
+        if (headers_sent()) {
+            return false;
+        }
+
+        $cookie_name = 'rengas_admin_auth';
+        $secret = get_session_secret();
+
+        if (isset($_SESSION) && !empty($_SESSION['admin_logged_in'])) {
+            $payload = $_SESSION;
+            $payload['__expires_at'] = time() + (86400 * 7); // Berlaku 7 hari
+            $payload_b64 = base64_encode(json_encode($payload));
+            $signature = hash_hmac('sha256', $payload_b64, $secret);
+            $cookie_val = $payload_b64 . '.' . $signature;
+
+            $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
+                        (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+
+            return setcookie($cookie_name, $cookie_val, [
+                'expires' => time() + (86400 * 7),
+                'path' => '/',
+                'secure' => $is_https,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
+        return false;
     }
 
     /**
@@ -49,24 +86,9 @@ if (!defined('SESSION_HELPER_LOADED')) {
         }
 
         // Sinkronisasi session ke signed cookie saat script selesai dieksekusi
-        register_shutdown_function(function() use ($cookie_name, $secret) {
-            if (isset($_SESSION) && !empty($_SESSION['admin_logged_in'])) {
-                $payload = $_SESSION;
-                $payload['__expires_at'] = time() + (86400 * 7); // Berlaku 7 hari
-                $payload_b64 = base64_encode(json_encode($payload));
-                $signature = hash_hmac('sha256', $payload_b64, $secret);
-                $cookie_val = $payload_b64 . '.' . $signature;
-
-                $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
-                            (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-
-                setcookie($cookie_name, $cookie_val, [
-                    'expires' => time() + (86400 * 7),
-                    'path' => '/',
-                    'secure' => $is_https,
-                    'httponly' => true,
-                    'samesite' => 'Lax'
-                ]);
+        register_shutdown_function(function() {
+            if (!headers_sent()) {
+                save_serverless_session();
             }
         });
     }
@@ -79,13 +101,15 @@ if (!defined('SESSION_HELPER_LOADED')) {
         $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
                     (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-        setcookie($cookie_name, '', [
-            'expires' => time() - 3600,
-            'path' => '/',
-            'secure' => $is_https,
-            'httponly' => true,
-            'samesite' => 'Lax'
-        ]);
+        if (!headers_sent()) {
+            setcookie($cookie_name, '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'secure' => $is_https,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]);
+        }
 
         $_SESSION = [];
         if (session_status() === PHP_SESSION_ACTIVE) {
