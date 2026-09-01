@@ -1,9 +1,8 @@
 <?php
-session_start();
+include 'koneksi.php';
 
-// Hapus semua session
-session_unset();
-session_destroy();
+// Hapus session serverless dan cookie auth
+destroy_serverless_session();
 
 // Redirect ke halaman login
 header("Location: login.php");

@@ -3,6 +3,9 @@
 // KONEKSI DATABASE & HELPER SUPABASE
 // ===================================================
 
+require_once __DIR__ . '/session_helper.php';
+init_serverless_session();
+
 // Fungsi sederhana untuk memuat file .env jika ada (Lokal / Development)
 function loadEnv($filePath) {
     if (!file_exists($filePath)) {
